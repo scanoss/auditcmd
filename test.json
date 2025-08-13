@@ -1,0 +1,51 @@
+{
+  "src/main.go": [
+    {
+      "component": "test-component",
+      "copyrights": [],
+      "cryptography": [],
+      "dependencies": [],
+      "file": "src/main.go",
+      "file_hash": "abc123",
+      "file_url": "https://example.com/file",
+      "health": {
+        "creation_date": "2023-01-01",
+        "forks": 10,
+        "issues": 5,
+        "last_push": "2023-12-01",
+        "last_update": "2023-12-01",
+        "stars": 100
+      },
+      "id": "file",
+      "latest": "1.0.0",
+      "licenses": [
+        {
+          "name": "MIT",
+          "source": "scancode"
+        }
+      ],
+      "oss_lines": "all",
+      "purl": ["pkg:example/test"],
+      "quality": [],
+      "release_date": "2023-01-01",
+      "server": {
+        "elapsed": "0.001s",
+        "flags": "0",
+        "hostname": "test",
+        "kb_version": {"daily": "23.12.01"},
+        "version": "1.0.0"
+      },
+      "source_hash": "def456",
+      "status": "pending",
+      "url": "https://example.com",
+      "url_hash": "ghi789",
+      "url_stats": {
+        "ignored_files": 0,
+        "indexed_files": 1,
+        "package_size": 1024,
+        "source_files": 1
+      },
+      "version": "1.0.0"
+    }
+  ]
+}

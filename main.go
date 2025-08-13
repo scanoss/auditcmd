@@ -1,0 +1,657 @@
+// Copyright (c) 2025 SCANOSS
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"sort"
+	"strings"
+
+	"github.com/awesome-gocui/gocui"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <scanoss-result.json>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --reset-api-key   (reset stored API key)\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --api-key-status  (check API key status)\n", os.Args[0])
+		os.Exit(1)
+	}
+
+	// Handle special commands
+	if os.Args[1] == "--reset-api-key" {
+		configPath := getConfigFilePath()
+		// Load existing config to preserve other settings
+		config, _ := loadConfig()
+		config.APIKey = "" // Clear only the API key
+		if err := saveConfig(config); err != nil {
+			fmt.Printf("Error updating config file: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("API key removed from %s\n", configPath)
+		fmt.Println("You will be prompted for a new API key on next run.")
+		os.Exit(0)
+	}
+
+	if os.Args[1] == "--api-key-status" {
+		configPath := getConfigFilePath()
+		apiKey, err := loadAPIKey()
+		if err != nil {
+			fmt.Printf("API Key Status: Not configured\n")
+			fmt.Printf("Config file: %s (not found)\n", configPath)
+			fmt.Println("Run the application to be prompted for an API key.")
+		} else {
+			fmt.Printf("API Key Status: Configured\n")
+			fmt.Printf("Config file: %s\n", configPath)
+			fmt.Printf("API key: %s...%s (%d characters)\n", 
+				apiKey[:min(4, len(apiKey))], 
+				apiKey[max(0, len(apiKey)-4):], 
+				len(apiKey))
+		}
+		os.Exit(0)
+	}
+
+	app := &AppState{
+		ActivePane:        "tree",
+		FilePath:          os.Args[1],
+		CurrentFileList:   make([]string, 0),
+		SelectedFileIndex: 0,
+		PaneWidth:         loadPaneWidth(), // Load from config
+		HideIdentified:    false,
+		ViewMode:          "list",
+	}
+
+	if err := loadScanData(app); err != nil {
+		log.Fatalf("Failed to load scan data: %v", err)
+	}
+
+	if err := buildFileTree(app); err != nil {
+		log.Fatalf("Failed to build file tree: %v", err)
+	}
+
+	// Initialize API key (may be empty if user skipped)
+	apiKey, err := getOrPromptAPIKey()
+	if err != nil {
+		log.Fatalf("Failed to get API key: %v", err)
+	}
+	app.APIKey = apiKey
+	
+	if app.APIKey == "" {
+		fmt.Println("Running in limited mode without API key.")
+	}
+
+	setGlobalApp(app) // Set global reference for pending file counting
+	initTreeState(app)
+
+	g, err := gocui.NewGui(gocui.OutputNormal, true)
+	if err != nil {
+		fmt.Printf("Error initializing GUI: %v\n", err)
+		fmt.Println("This application requires a proper terminal environment.")
+		fmt.Println("Data loaded successfully:")
+		fmt.Printf("- %d file entries found\n", len(app.ScanData.Files))
+		fmt.Printf("- File tree built with %d top-level items\n", len(app.FileTree.Children))
+		os.Exit(1)
+	}
+	defer g.Close()
+
+	g.Highlight = true
+	g.Cursor = true
+	g.SelFgColor = gocui.ColorYellow
+	
+	// Set initial current view based on ActivePane
+	if app.ActivePane == "tree" {
+		g.SetCurrentView("tree")
+	} else {
+		g.SetCurrentView("files")
+	}
+	
+	// Initial layout and populate all views
+	if err := layoutWithApp(g, app); err != nil {
+		log.Fatalf("Failed to create initial layout: %v", err)
+	}
+	
+	// Initialize views that don't depend on the main loop
+	updatePaneTitles(g, app)
+	displayTree(g, app)
+	// Don't call updateFileList here - it will be called in the manager function
+	
+	g.SetManagerFunc(func(g *gocui.Gui) error {
+		if err := layoutWithApp(g, app); err != nil {
+			return err
+		}
+		updatePaneTitles(g, app)
+		displayTree(g, app)
+		
+		// Do initial file list update once the GUI is fully running
+		if !app.InitialFileListDone {
+			updateFileList(g, app)
+			app.InitialFileListDone = true
+		}
+		
+		updateStatus(g, app)
+		updateHelpBar(g, app)
+		updateCursorPositions(g, app)
+		return nil
+	})
+
+	if err := keybindings(g, app); err != nil {
+		log.Panicln(err)
+	}
+
+	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
+		log.Panicln(err)
+	}
+}
+
+func loadScanData(app *AppState) error {
+	data, err := ioutil.ReadFile(app.FilePath)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &app.ScanData.Files)
+}
+
+func buildFileTree(app *AppState) error {
+	root := &TreeNode{
+		Name:     "Root",
+		Path:     "",
+		IsDir:    true,
+		Children: make([]*TreeNode, 0),
+	}
+
+	// Get file paths from JSON keys and filter by match type
+	paths := make([]string, 0)
+	for filePath, matches := range app.ScanData.Files {
+		// Only include files with valid matches (id = "file" or "snippet")
+		hasValidMatch := false
+		for _, match := range matches {
+			if match.ID == "file" || match.ID == "snippet" {
+				hasValidMatch = true
+				break
+			}
+		}
+		if hasValidMatch {
+			paths = append(paths, filePath)
+		}
+	}
+
+	sort.Strings(paths)
+
+	// Build directory tree (no files in tree, only directories)
+	for _, path := range paths {
+		parts := strings.Split(path, "/")
+		current := root
+
+		// Only create directory nodes, not file nodes
+		for i, part := range parts[:len(parts)-1] { // Exclude the file name
+			if part == "" {
+				continue
+			}
+
+			found := false
+			for _, child := range current.Children {
+				if child.Name == part {
+					current = child
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				node := &TreeNode{
+					Name:     part,
+					Path:     strings.Join(parts[:i+1], "/"),
+					IsDir:    true,
+					Parent:   current,
+					Children: make([]*TreeNode, 0),
+					Files:    make([]string, 0),
+				}
+
+				current.Children = append(current.Children, node)
+				current = node
+			}
+		}
+	}
+
+	app.FileTree = root
+	
+	// Pre-calculate pending counts for all directories
+	calculateDirectoryCounts(root, app)
+	
+	return nil
+}
+
+func calculateDirectoryCounts(node *TreeNode, app *AppState) {
+	// This function pre-calculates pending file counts for all directories
+	// to ensure counts are available immediately when the tree is displayed
+	for _, child := range node.Children {
+		if child.IsDir {
+			calculateDirectoryCounts(child, app)
+		}
+	}
+}
+
+func layoutWithApp(g *gocui.Gui, app *AppState) error {
+	maxX, maxY := g.Size()
+	splitX := int(float64(maxX) * app.PaneWidth)
+
+	// Status pane - 2 lines high at top
+	if v, err := g.SetView("status", 0, 0, maxX-1, 3, 0); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		v.Title = "Status"
+		v.Wrap = true
+	}
+
+	// Directory tree pane
+	if v, err := g.SetView("tree", 0, 3, splitX-1, maxY-2, 0); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		v.Title = "Directories" // Default title, will be updated by updatePaneTitles
+		v.Highlight = true
+		v.SelBgColor = gocui.ColorYellow
+		v.SelFgColor = gocui.ColorBlack
+	}
+
+	// Files pane
+	if v, err := g.SetView("files", splitX, 3, maxX-1, maxY-2, 0); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		v.Title = "Files" // Default title, will be updated by updatePaneTitles
+		v.Wrap = true
+		v.Highlight = true
+		v.SelBgColor = gocui.ColorYellow
+		v.SelFgColor = gocui.ColorBlack
+	}
+
+	// Help bar with status on the right
+	if v, err := g.SetView("help", 0, maxY-2, maxX-1, maxY, 0); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		v.Frame = false
+	}
+
+	return nil
+}
+
+func keybindings(g *gocui.Gui, app *AppState) error {
+	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'q', gocui.ModNone, quit); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyTab, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Don't allow pane switching when viewing file content
+		if app.ViewMode == "content" {
+			return nil
+		}
+		return switchPane(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		return selectItem(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", ' ', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// In content view, Space = page down
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "down", true)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'a', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Only allow accept when NOT in directory pane
+		if app.ActivePane == "tree" {
+			return nil
+		}
+		return showAcceptDialog(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'A', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Only allow accept when NOT in directory pane
+		if app.ActivePane == "tree" {
+			return nil
+		}
+		return showAcceptDialog(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'i', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Only allow ignore when NOT in directory pane
+		if app.ActivePane == "tree" {
+			return nil
+		}
+		return showIgnoreDialog(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'I', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Only allow ignore when NOT in directory pane
+		if app.ActivePane == "tree" {
+			return nil
+		}
+		return showIgnoreDialog(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyArrowUp, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Don't allow navigation if audit dialog is open
+		if isAuditDialogOpen(g) {
+			return nil
+		}
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "up", false)
+		} else if app.ActivePane == "tree" {
+			return navigateTree(g, app, "up")
+		} else if app.ViewMode == "list" {
+			return navigateFileList(g, app, "up")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyArrowDown, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		// Don't allow navigation if audit dialog is open
+		if isAuditDialogOpen(g) {
+			return nil
+		}
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "down", false)
+		} else if app.ActivePane == "tree" {
+			return navigateTree(g, app, "down")
+		} else if app.ViewMode == "list" {
+			return navigateFileList(g, app, "down")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyArrowRight, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		return resizePane(g, app, 0.05)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyArrowLeft, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		return resizePane(g, app, -0.05)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 't', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) {
+			return nil
+		}
+		return toggleHideIdentified(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'T', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) {
+			return nil
+		}
+		return toggleHideIdentified(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyEsc, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		return handleEscape(g, app)
+	}); err != nil {
+		return err
+	}
+	
+	// Shift+Up for page up scrolling
+	if err := g.SetKeybinding("", gocui.KeyArrowUp, gocui.ModShift, func(g *gocui.Gui, v *gocui.View) error {
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "up", true)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	
+	// Shift+Down for page down scrolling  
+	if err := g.SetKeybinding("", gocui.KeyArrowDown, gocui.ModShift, func(g *gocui.Gui, v *gocui.View) error {
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "down", true)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	
+	// Page Up key for page up scrolling
+	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "up", true)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	
+	// Page Down key for page down scrolling
+	if err := g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "down", true)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	
+	// Shift+Space for page up scrolling
+	if err := g.SetKeybinding("", ' ', gocui.ModShift, func(g *gocui.Gui, v *gocui.View) error {
+		if app.ViewMode == "content" {
+			return scrollFileContent(g, app, "up", true)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func quit(g *gocui.Gui, v *gocui.View) error {
+	return gocui.ErrQuit
+}
+
+func switchPane(g *gocui.Gui, app *AppState) error {
+	if app.ActivePane == "tree" {
+		app.ActivePane = "files"
+		if _, err := g.SetCurrentView("files"); err != nil {
+			return err
+		}
+	} else {
+		app.ActivePane = "tree"
+		if _, err := g.SetCurrentView("tree"); err != nil {
+			return err
+		}
+	}
+	
+	// Force immediate update of pane titles
+	updatePaneTitles(g, app)
+	return nil
+}
+
+func selectItem(g *gocui.Gui, app *AppState) error {
+	if app.ActivePane == "tree" {
+		return toggleTreeNode(g, app)
+	} else {
+		if app.ViewMode == "list" {
+			// Show file content
+			if len(app.CurrentFileList) > 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+				app.ViewMode = "content"
+				selectedFile := app.CurrentFileList[app.SelectedFileIndex]
+				app.CurrentFile = selectedFile
+				return displayFileContent(g, app, selectedFile)
+			}
+		}
+		return nil
+	}
+}
+
+func resizePane(g *gocui.Gui, app *AppState, delta float64) error {
+	app.PaneWidth += delta
+	if app.PaneWidth < 0.2 {
+		app.PaneWidth = 0.2
+	}
+	if app.PaneWidth > 0.8 {
+		app.PaneWidth = 0.8
+	}
+	
+	// Save pane width to config
+	if err := savePaneWidth(app.PaneWidth); err != nil {
+		// Don't fail the resize operation if config save fails
+		// Just log the error (could be improved with proper logging)
+	}
+	
+	return nil
+}
+
+func toggleHideIdentified(g *gocui.Gui, app *AppState) error {
+	app.HideIdentified = !app.HideIdentified
+	updateFileList(g, app)
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func handleEscape(g *gocui.Gui, app *AppState) error {
+	if app.ViewMode == "content" {
+		app.ViewMode = "list"
+		app.CurrentMatch = nil // Clear current match to show general status
+		updateFileList(g, app)
+		return nil
+	}
+	return nil
+}
+
+func isAuditDialogOpen(g *gocui.Gui) bool {
+	_, err1 := g.View("audit_dialog")
+	_, err2 := g.View("audit_input")
+	_, err3 := g.View("assessment_input")
+	_, err4 := g.View("audit_error")
+	return err1 == nil || err2 == nil || err3 == nil || err4 == nil
+}
+
+func updatePaneTitles(g *gocui.Gui, app *AppState) error {
+	// Update tree pane title
+	if v, err := g.View("tree"); err == nil {
+		if app.ActivePane == "tree" {
+			v.Title = "[ Directories ]"
+			v.TitleColor = gocui.ColorYellow
+		} else {
+			v.Title = "Directories"
+			v.TitleColor = gocui.ColorDefault
+		}
+	}
+	
+	// Update files pane title
+	if v, err := g.View("files"); err == nil {
+		if app.ActivePane == "files" {
+			if app.ViewMode == "content" {
+				v.Title = "[ File Content ]"
+			} else {
+				v.Title = "[ Files ]"
+			}
+			v.TitleColor = gocui.ColorYellow
+		} else {
+			if app.ViewMode == "content" {
+				v.Title = "File Content"
+			} else {
+				v.Title = "Files"
+			}
+			v.TitleColor = gocui.ColorDefault
+		}
+	}
+	
+	return nil
+}
+
+func updateHelpBar(g *gocui.Gui, app *AppState) error {
+	v, err := g.View("help")
+	if err != nil {
+		return err
+	}
+
+	v.Clear()
+
+	// Get progress information
+	auditedFiles, totalFiles, percentage := calculateProgress(app)
+	statusText := fmt.Sprintf("%d%% done (%d/%d)", percentage, auditedFiles, totalFiles)
+	
+	// Help text
+	helpText := "Tab: Switch panes | Enter/ESC: Open/Close file | [T]oggle identified | [A]ccept/[I]gnore identification | [Q]uit"
+	
+	// Calculate padding to right-justify status
+	maxX, _ := v.Size()
+	if maxX <= 0 {
+		maxX = 80 // Fallback width
+	}
+	
+	totalContentLen := len(helpText) + len(statusText)
+	if totalContentLen < maxX {
+		padding := strings.Repeat(" ", maxX-totalContentLen)
+		fmt.Fprintf(v, "%s%s%s", helpText, padding, statusText)
+	} else {
+		// If content is too long, just show help text
+		fmt.Fprint(v, helpText)
+	}
+
+	return nil
+}
+
+func updateCursorPositions(g *gocui.Gui, app *AppState) error {
+	// Update tree cursor position
+	if v, err := g.View("tree"); err == nil {
+		currentIndex := -1
+		for i, line := range app.TreeState.displayLines {
+			if line.Node == app.TreeState.selectedNode {
+				currentIndex = i
+				break
+			}
+		}
+		if currentIndex >= 0 {
+			v.SetCursor(0, currentIndex)
+		}
+	}
+	
+	// Update files cursor position (only in list mode)
+	if app.ViewMode == "list" {
+		if v, err := g.View("files"); err == nil {
+			if app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+				v.SetCursor(0, app.SelectedFileIndex)
+			}
+		}
+	}
+	
+	return nil
+}
