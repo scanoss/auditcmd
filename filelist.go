@@ -390,7 +390,7 @@ func navigateFileList(g *gocui.Gui, app *AppState, direction string) error {
 }
 
 func selectFile(g *gocui.Gui, app *AppState) error {
-	if len(app.CurrentFileList) == 0 {
+	if len(app.CurrentFileList) == 0 || app.SelectedFileIndex < 0 || app.SelectedFileIndex >= len(app.CurrentFileList) {
 		return nil
 	}
 

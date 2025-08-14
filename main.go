@@ -594,7 +594,7 @@ func selectItem(g *gocui.Gui, app *AppState) error {
 	} else {
 		if app.ViewMode == "list" {
 			// Show file content
-			if len(app.CurrentFileList) > 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+			if len(app.CurrentFileList) > 0 && app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
 				app.ViewMode = "content"
 				selectedFile := app.CurrentFileList[app.SelectedFileIndex]
 				app.CurrentFile = selectedFile
@@ -632,9 +632,26 @@ func toggleHideIdentified(g *gocui.Gui, app *AppState) error {
 		// Just continue with the toggle
 	}
 	
-	updateFileList(g, app)
 	updateTreeDisplay(app)
+	
+	// If the current selection is no longer visible, select the first visible node
+	if len(app.TreeState.displayLines) > 0 {
+		currentVisible := false
+		for _, line := range app.TreeState.displayLines {
+			if line.Node == app.TreeState.selectedNode {
+				currentVisible = true
+				break
+			}
+		}
+		
+		// If current selection is not visible, select first available node
+		if !currentVisible {
+			app.TreeState.selectedNode = app.TreeState.displayLines[0].Node
+		}
+	}
+	
 	displayTree(g, app)
+	updateFileList(g, app)
 	return nil
 }
 

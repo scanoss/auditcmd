@@ -16,7 +16,7 @@ import (
 func showAcceptDialog(g *gocui.Gui, app *AppState) error {
 	// If no current match is set, try to get it from the selected file
 	if app.CurrentMatch == nil {
-		if app.ActivePane == "files" && len(app.CurrentFileList) > 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+		if app.ActivePane == "files" && len(app.CurrentFileList) > 0 && app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
 			selectedFile := app.CurrentFileList[app.SelectedFileIndex]
 			matches, exists := app.ScanData.Files[selectedFile]
 			if exists && len(matches) > 0 {
@@ -116,7 +116,7 @@ func showAcceptDialog(g *gocui.Gui, app *AppState) error {
 func showIgnoreDialog(g *gocui.Gui, app *AppState) error {
 	// If no current match is set, try to get it from the selected file
 	if app.CurrentMatch == nil {
-		if app.ActivePane == "files" && len(app.CurrentFileList) > 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+		if app.ActivePane == "files" && len(app.CurrentFileList) > 0 && app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
 			selectedFile := app.CurrentFileList[app.SelectedFileIndex]
 			matches, exists := app.ScanData.Files[selectedFile]
 			if exists && len(matches) > 0 {

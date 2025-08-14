@@ -74,11 +74,17 @@ func buildTreeDisplay(node *TreeNode, indent int, state *TreeState) {
 
 	// Add file count for directories based on audited filter setting
 	displayName := node.Name
+	fileCount := 0
 	if node.IsDir {
-		fileCount := countFilesInDirectory(node.Path)
+		fileCount = countFilesInDirectory(node.Path)
 		if fileCount > 0 {
 			displayName = fmt.Sprintf("%s (%d)", node.Name, fileCount)
 		}
+	}
+
+	// Skip directories with zero files when hiding audited files
+	if node.IsDir && globalApp != nil && globalApp.HideIdentified && fileCount == 0 {
+		return
 	}
 
 	line := fmt.Sprintf("%s%s%s", prefix, symbol, displayName)
@@ -129,6 +135,11 @@ func buildPURLDisplay(app *AppState) {
 					break // Only count first valid match per file
 				}
 			}
+		}
+		
+		// Skip PURLs with zero files when hiding audited files
+		if app.HideIdentified && count == 0 {
+			continue
 		}
 		
 		displayName := fmt.Sprintf("%s (%d)", purlEntry.PURL, count)
