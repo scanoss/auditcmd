@@ -20,16 +20,35 @@ func initTreeState(app *AppState) {
 	app.TreeState.expandedDirs[""] = true
 	updateTreeDisplay(app)
 	
-	// Set initial selected node to first child if available
-	if len(app.FileTree.Children) > 0 {
-		app.TreeState.selectedNode = app.FileTree.Children[0]
-		updateTreeDisplay(app)
+	// Set initial selected node
+	if app.TreeViewType == "purls" {
+		// In PURL mode, select first PURL if available
+		if len(app.PURLRanking) > 0 {
+			app.TreeState.selectedNode = &TreeNode{
+				Name:  app.PURLRanking[0].PURL,
+				Path:  "purl_0",
+				IsDir: false,
+				Files: app.PURLRanking[0].Files,
+			}
+		}
+	} else {
+		// In directory mode, select first child if available
+		if len(app.FileTree.Children) > 0 {
+			app.TreeState.selectedNode = app.FileTree.Children[0]
+		}
 	}
+	
+	updateTreeDisplay(app)
 }
 
 func updateTreeDisplay(app *AppState) {
 	app.TreeState.displayLines = make([]TreeDisplayLine, 0)
-	buildTreeDisplay(app.FileTree, 0, app.TreeState)
+	
+	if app.TreeViewType == "purls" {
+		buildPURLDisplay(app)
+	} else {
+		buildTreeDisplay(app.FileTree, 0, app.TreeState)
+	}
 }
 
 func buildTreeDisplay(node *TreeNode, indent int, state *TreeState) {
@@ -53,12 +72,12 @@ func buildTreeDisplay(node *TreeNode, indent int, state *TreeState) {
 		symbol = "    "
 	}
 
-	// Add pending file count for directories
+	// Add file count for directories based on audited filter setting
 	displayName := node.Name
 	if node.IsDir {
-		pendingCount := countPendingFilesInDirectory(node.Path)
-		if pendingCount > 0 {
-			displayName = fmt.Sprintf("%s (%d)", node.Name, pendingCount)
+		fileCount := countFilesInDirectory(node.Path)
+		if fileCount > 0 {
+			displayName = fmt.Sprintf("%s (%d)", node.Name, fileCount)
 		}
 	}
 
@@ -82,6 +101,52 @@ func buildTreeDisplay(node *TreeNode, indent int, state *TreeState) {
 		for _, child := range sortedChildren {
 			buildTreeDisplay(child, indent+1, state)
 		}
+	}
+}
+
+func buildPURLDisplay(app *AppState) {
+	for i, purlEntry := range app.PURLRanking {
+		// Calculate count based on HideIdentified setting
+		count := 0
+		for _, filePath := range purlEntry.Files {
+			matches, exists := app.ScanData.Files[filePath]
+			if !exists {
+				continue
+			}
+			
+			// Find the first valid match (file or snippet)
+			for _, match := range matches {
+				if match.ID == "file" || match.ID == "snippet" {
+					if app.HideIdentified {
+						// Count only pending files when audited files are hidden
+						if len(match.AuditCmd) == 0 {
+							count++
+						}
+					} else {
+						// Count all files when audited files are shown
+						count++
+					}
+					break // Only count first valid match per file
+				}
+			}
+		}
+		
+		displayName := fmt.Sprintf("%s (%d)", purlEntry.PURL, count)
+		
+		// Create a fake TreeNode for PURL entries
+		purlNode := &TreeNode{
+			Name:  purlEntry.PURL,
+			Path:  fmt.Sprintf("purl_%d", i),
+			IsDir: false,
+			Files: purlEntry.Files,
+		}
+		
+		line := fmt.Sprintf("    %s", displayName)
+		app.TreeState.displayLines = append(app.TreeState.displayLines, TreeDisplayLine{
+			Node:   purlNode,
+			Indent: 0,
+			Line:   line,
+		})
 	}
 }
 
@@ -159,12 +224,12 @@ func setGlobalApp(app *AppState) {
 	globalApp = app
 }
 
-func countPendingFilesInDirectory(dirPath string) int {
+func countFilesInDirectory(dirPath string) int {
 	if globalApp == nil {
 		return 0
 	}
 	
-	pendingCount := 0
+	count := 0
 	
 	for filePath, matches := range globalApp.ScanData.Files {
 		// Check if file is in this directory or subdirectories
@@ -181,9 +246,14 @@ func countPendingFilesInDirectory(dirPath string) int {
 			for _, match := range matches {
 				// Only count files with id = "file" or "snippet"
 				if match.ID == "file" || match.ID == "snippet" {
-					// Check if file has been audited
-					if len(match.AuditCmd) == 0 {
-						pendingCount++
+					if globalApp.HideIdentified {
+						// Show pending count when audited files are hidden
+						if len(match.AuditCmd) == 0 {
+							count++
+						}
+					} else {
+						// Show total matches count when audited files are shown
+						count++
 					}
 					break // Only count first valid match per file
 				}
@@ -191,5 +261,5 @@ func countPendingFilesInDirectory(dirPath string) int {
 		}
 	}
 	
-	return pendingCount
+	return count
 }

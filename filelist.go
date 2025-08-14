@@ -34,12 +34,20 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 	}
 
 	node := app.TreeState.selectedNode
+	var files []string
 
-	if !node.IsDir {
-		return nil
+	if app.TreeViewType == "purls" {
+		// In PURL mode, show files from the selected PURL's file list
+		if len(node.Files) > 0 {
+			files = node.Files
+		}
+	} else {
+		// In directory mode, show files in the selected directory
+		if !node.IsDir {
+			return nil
+		}
+		files = getFilesInDirectory(app, node.Path)
 	}
-
-	files := getFilesInDirectory(app, node.Path)
 	
 	// Filter files based on HideIdentified setting
 	filteredFiles := make([]string, 0)

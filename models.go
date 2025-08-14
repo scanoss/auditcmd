@@ -34,7 +34,7 @@ type FileMatch struct {
 	URLHash       string           `json:"url_hash"`
 	URLStats      URLStats         `json:"url_stats"`
 	Version       string           `json:"version"`
-	AuditCmd      []AuditDecision  `json:"audit_cmd,omitempty"`
+	AuditCmd      []AuditDecision  `json:"audit,omitempty"`
 }
 
 type Copyright struct {
@@ -87,6 +87,12 @@ type AuditDecision struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+type PURLRankEntry struct {
+	PURL     string
+	Files    []string
+	Count    int
+}
+
 type AppState struct {
 	ScanData          ScanResult
 	CurrentFile       string
@@ -103,6 +109,8 @@ type AppState struct {
 	HideIdentified    bool   // Actually hides all processed files
 	APIKey            string
 	ViewMode          string // "list" or "content"
+	TreeViewType      string // "directories" or "purls"
+	PURLRanking       []PURLRankEntry
 	InitialFileListDone bool   // Track if initial file list has been populated
 }
 

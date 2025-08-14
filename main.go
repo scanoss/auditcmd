@@ -61,9 +61,10 @@ func main() {
 		FilePath:          os.Args[1],
 		CurrentFileList:   make([]string, 0),
 		SelectedFileIndex: 0,
-		PaneWidth:         loadPaneWidth(), // Load from config
-		HideIdentified:    false,
+		PaneWidth:         loadPaneWidth(),        // Load from config
+		HideIdentified:    loadHideIdentified(),   // Load from config
 		ViewMode:          "list",
+		TreeViewType:      "directories",
 	}
 
 	if err := loadScanData(app); err != nil {
@@ -72,6 +73,10 @@ func main() {
 
 	if err := buildFileTree(app); err != nil {
 		log.Fatalf("Failed to build file tree: %v", err)
+	}
+
+	if err := buildPURLRanking(app); err != nil {
+		log.Fatalf("Failed to build PURL ranking: %v", err)
 	}
 
 	// Initialize API key (may be empty if user skipped)
@@ -237,6 +242,50 @@ func calculateDirectoryCounts(node *TreeNode, app *AppState) {
 	}
 }
 
+func buildPURLRanking(app *AppState) error {
+	purlMap := make(map[string][]string)
+	
+	// Collect first PURL from each file with valid matches
+	for filePath, matches := range app.ScanData.Files {
+		for _, match := range matches {
+			// Only process files with id = "file" or "snippet"
+			if match.ID != "file" && match.ID != "snippet" {
+				continue
+			}
+			
+			// Get first PURL from this match
+			if len(match.Purl) > 0 {
+				firstPURL := match.Purl[0]
+				if _, exists := purlMap[firstPURL]; !exists {
+					purlMap[firstPURL] = make([]string, 0)
+				}
+				purlMap[firstPURL] = append(purlMap[firstPURL], filePath)
+			}
+			break // Only process first valid match per file
+		}
+	}
+	
+	// Convert map to sorted slice
+	app.PURLRanking = make([]PURLRankEntry, 0, len(purlMap))
+	for purl, files := range purlMap {
+		app.PURLRanking = append(app.PURLRanking, PURLRankEntry{
+			PURL:  purl,
+			Files: files,
+			Count: len(files),
+		})
+	}
+	
+	// Sort by count descending, then by PURL name ascending
+	sort.Slice(app.PURLRanking, func(i, j int) bool {
+		if app.PURLRanking[i].Count != app.PURLRanking[j].Count {
+			return app.PURLRanking[i].Count > app.PURLRanking[j].Count
+		}
+		return app.PURLRanking[i].PURL < app.PURLRanking[j].PURL
+	})
+	
+	return nil
+}
+
 func layoutWithApp(g *gocui.Gui, app *AppState) error {
 	maxX, maxY := g.Size()
 	splitX := int(float64(maxX) * app.PaneWidth)
@@ -347,6 +396,22 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 			return nil
 		}
 		return showIgnoreDialog(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'e', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) {
+			return nil
+		}
+		return showExportDialog(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'E', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) {
+			return nil
+		}
+		return showExportDialog(g, app)
 	}); err != nil {
 		return err
 	}
@@ -463,6 +528,40 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 	}); err != nil {
 		return err
 	}
+	
+	// Toggle between PURLs and Directories view
+	if err := g.SetKeybinding("", 'p', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) || app.ViewMode == "content" {
+			return nil
+		}
+		return toggleTreeViewType(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'P', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) || app.ViewMode == "content" {
+			return nil
+		}
+		return toggleTreeViewType(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'd', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) || app.ViewMode == "content" {
+			return nil
+		}
+		return toggleTreeViewType(g, app)
+	}); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", 'D', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
+		if isAuditDialogOpen(g) || app.ViewMode == "content" {
+			return nil
+		}
+		return toggleTreeViewType(g, app)
+	}); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -526,6 +625,43 @@ func resizePane(g *gocui.Gui, app *AppState, delta float64) error {
 
 func toggleHideIdentified(g *gocui.Gui, app *AppState) error {
 	app.HideIdentified = !app.HideIdentified
+	
+	// Save the new setting to config
+	if err := saveHideIdentified(app.HideIdentified); err != nil {
+		// Don't fail the toggle operation if config save fails
+		// Just continue with the toggle
+	}
+	
+	updateFileList(g, app)
+	updateTreeDisplay(app)
+	displayTree(g, app)
+	return nil
+}
+
+func toggleTreeViewType(g *gocui.Gui, app *AppState) error {
+	if app.TreeViewType == "directories" {
+		app.TreeViewType = "purls"
+		// Select first PURL if available
+		if len(app.PURLRanking) > 0 {
+			app.TreeState.selectedNode = &TreeNode{
+				Name:  app.PURLRanking[0].PURL,
+				Path:  "purl_0",
+				IsDir: false,
+				Files: app.PURLRanking[0].Files,
+			}
+		}
+	} else {
+		app.TreeViewType = "directories"
+		// Select first directory child if available
+		if len(app.FileTree.Children) > 0 {
+			app.TreeState.selectedNode = app.FileTree.Children[0]
+		} else {
+			app.TreeState.selectedNode = app.FileTree
+		}
+	}
+	
+	updateTreeDisplay(app)
+	displayTree(g, app)
 	updateFileList(g, app)
 	return nil
 }
@@ -559,17 +695,33 @@ func isAuditDialogOpen(g *gocui.Gui) bool {
 	_, err2 := g.View("audit_input")
 	_, err3 := g.View("assessment_input")
 	_, err4 := g.View("audit_error")
-	return err1 == nil || err2 == nil || err3 == nil || err4 == nil
+	_, err5 := g.View("export_dialog")
+	_, err6 := g.View("export_error")
+	return err1 == nil || err2 == nil || err3 == nil || err4 == nil || err5 == nil || err6 == nil
 }
 
 func updatePaneTitles(g *gocui.Gui, app *AppState) error {
 	// Update tree pane title
 	if v, err := g.View("tree"); err == nil {
+		var title string
+		if app.TreeViewType == "purls" {
+			if app.ActivePane == "tree" {
+				title = "[ PURLs ]"
+			} else {
+				title = "PURLs"
+			}
+		} else {
+			if app.ActivePane == "tree" {
+				title = "[ Directories ]"
+			} else {
+				title = "Directories"
+			}
+		}
+		
+		v.Title = title
 		if app.ActivePane == "tree" {
-			v.Title = "[ Directories ]"
 			v.TitleColor = gocui.ColorYellow
 		} else {
-			v.Title = "Directories"
 			v.TitleColor = gocui.ColorDefault
 		}
 	}
@@ -609,7 +761,13 @@ func updateHelpBar(g *gocui.Gui, app *AppState) error {
 	statusText := fmt.Sprintf("%d%% done (%d/%d)", percentage, auditedFiles, totalFiles)
 	
 	// Help text
-	helpText := "Tab: Switch panes | Enter/ESC: Open/Close file | [T]oggle identified | [A]ccept/[I]gnore identification | [Q]uit"
+	var toggleViewText string
+	if app.TreeViewType == "purls" {
+		toggleViewText = "[D]irectories"
+	} else {
+		toggleViewText = "[P]URLs"
+	}
+	helpText := fmt.Sprintf("Tab: Switch panes | [T]oggle audited | [A]ccept/[I]gnore match | [E]xport CSV | %s | [Q]uit", toggleViewText)
 	
 	// Calculate padding to right-justify status
 	maxX, _ := v.Size()

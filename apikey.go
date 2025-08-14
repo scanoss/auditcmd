@@ -27,8 +27,9 @@ func getConfigFilePath() string {
 }
 
 type Config struct {
-	APIKey    string
-	PaneWidth float64
+	APIKey        string
+	PaneWidth     float64
+	HideIdentified bool
 }
 
 func loadConfig() (*Config, error) {
@@ -36,8 +37,9 @@ func loadConfig() (*Config, error) {
 	
 	// Default config
 	config := &Config{
-		APIKey:    "",
-		PaneWidth: 0.5,
+		APIKey:        "",
+		PaneWidth:     0.5,
+		HideIdentified: false,
 	}
 	
 	// Check if config file exists
@@ -70,6 +72,10 @@ func loadConfig() (*Config, error) {
 			case "pane_width":
 				if width, err := strconv.ParseFloat(value, 64); err == nil {
 					config.PaneWidth = width
+				}
+			case "hide_identified":
+				if hide, err := strconv.ParseBool(value); err == nil {
+					config.HideIdentified = hide
 				}
 			}
 		}
@@ -105,6 +111,7 @@ func saveConfig(config *Config) error {
 	content += "# This file stores settings for the AuditCmd application\n\n"
 	content += fmt.Sprintf("api_key=%s\n", config.APIKey)
 	content += fmt.Sprintf("pane_width=%.2f\n", config.PaneWidth)
+	content += fmt.Sprintf("hide_identified=%t\n", config.HideIdentified)
 	
 	// Write config to file with secure permissions
 	err := ioutil.WriteFile(configPath, []byte(content), 0600)
@@ -210,6 +217,19 @@ func savePaneWidth(width float64) error {
 func loadPaneWidth() float64 {
 	config, _ := loadConfig()
 	return config.PaneWidth
+}
+
+func saveHideIdentified(hideIdentified bool) error {
+	// Load existing config
+	config, _ := loadConfig()
+	config.HideIdentified = hideIdentified
+	
+	return saveConfig(config)
+}
+
+func loadHideIdentified() bool {
+	config, _ := loadConfig()
+	return config.HideIdentified
 }
 
 // validateAPIKey tests the API key by making a simple request

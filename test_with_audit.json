@@ -46,7 +46,7 @@
         "source_files": 1
       },
       "version": "1.0.0",
-      "audit_cmd": [
+      "audit": [
         {
           "decision": "identified",
           "assessment": "This is a valid match",
@@ -102,7 +102,7 @@
         "source_files": 1
       },
       "version": "1.0.0",
-      "audit_cmd": [
+      "audit": [
         {
           "decision": "ignored",
           "assessment": "This is a false positive",

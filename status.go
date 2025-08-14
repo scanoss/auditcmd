@@ -20,7 +20,8 @@ func updateStatus(g *gocui.Gui, app *AppState) error {
 
 	if app.CurrentMatch != nil {
 		displayFileStatus(v, app.CurrentMatch)
-	} else if app.TreeState != nil && app.TreeState.selectedNode != nil && app.TreeState.selectedNode.IsDir {
+	} else if app.TreeState != nil && app.TreeState.selectedNode != nil {
+		// Show directory status for both directory nodes and PURL nodes
 		displayDirectoryStatus(v, app)
 	}
 
@@ -101,5 +102,9 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 	if app.APIKey == "" {
 		apiStatus = "API key \033[1mNO\033[0m"
 	}
-	fmt.Fprintf(v, "\n\033[1mPending:\033[0m \033[37m%d\033[0m | \033[1mIdentified:\033[0m \033[37m%d\033[0m | \033[1mIgnored:\033[0m \033[37m%d\033[0m | \033[1mHide Processed:\033[0m \033[37m%t\033[0m | \033[1mShowing:\033[0m \033[37m%d\033[0m | %s", pendingFiles, identifiedFiles, ignoredFiles, app.HideIdentified, len(app.CurrentFileList), apiStatus)
+	auditedLabel := "shown"
+	if app.HideIdentified {
+		auditedLabel = "hidden"
+	}
+	fmt.Fprintf(v, "\n\033[1mPending:\033[0m \033[37m%d\033[0m | \033[1mIdentified:\033[0m \033[37m%d\033[0m | \033[1mIgnored:\033[0m \033[37m%d\033[0m | \033[1mAudited:\033[0m \033[37m%s\033[0m | %s", pendingFiles, identifiedFiles, ignoredFiles, auditedLabel, apiStatus)
 }

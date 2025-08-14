@@ -115,7 +115,7 @@ The application is divided into four main sections:
 4. Type your optional comment (or leave blank)
 5. Press **Enter** to save the decision or **ESC** to cancel
 
-Audit decisions are saved directly to the original JSON file in an `audit_cmd` array for each file match.
+Audit decisions are saved directly to the original JSON file in an `audit` array for each file match.
 
 ## Data Structure
 
@@ -126,7 +126,7 @@ The tool expects SCANOSS JSON format with the following key fields:
 - `oss_lines`: Line ranges for snippet matches
 - `purl`: Package URL identifiers
 - `licenses`: License information
-- `audit_cmd`: Array of audit decisions (added by this tool)
+- `audit`: Array of audit decisions (added by this tool)
 
 ## Building
 
