@@ -18,7 +18,7 @@ func initTreeState(app *AppState) {
 		displayLines: make([]TreeDisplayLine, 0),
 	}
 	app.TreeState.expandedDirs[""] = true
-	
+
 	// Set initial selected node
 	if app.TreeViewType == "purls" {
 		// In PURL mode, select first PURL if available
@@ -34,7 +34,7 @@ func initTreeState(app *AppState) {
 		// In directory mode, intelligently select initial directory
 		if len(app.FileTree.Children) > 0 {
 			selectedNode := app.FileTree.Children[0] // Default to first child
-			
+
 			// If we're in "matched" or "pending" mode, try to find a directory with matching files
 			if app.ViewFilter == "matched" || app.ViewFilter == "pending" {
 				for _, child := range app.FileTree.Children {
@@ -47,32 +47,32 @@ func initTreeState(app *AppState) {
 					}
 				}
 			}
-			
+
 			app.TreeState.selectedNode = selectedNode
 		} else {
 			app.TreeState.selectedNode = app.FileTree
 		}
 	}
-	
+
 	updateTreeDisplay(app)
 }
 
 func updateTreeDisplay(app *AppState) {
 	app.TreeState.displayLines = make([]TreeDisplayLine, 0)
-	
+
 	if app.TreeViewType == "purls" {
 		buildPURLDisplay(app)
 	} else {
 		buildTreeDisplay(app.FileTree, 0, app.TreeState)
 	}
-	
+
 	// Update custom scrollable list with display lines
 	treeItems := make([]string, 0, len(app.TreeState.displayLines))
 	for _, line := range app.TreeState.displayLines {
 		treeItems = append(treeItems, line.Line)
 	}
 	app.TreeList.SetItems(treeItems)
-	
+
 	// Find current selection index in display lines
 	currentIndex := -1
 	for i, line := range app.TreeState.displayLines {
@@ -97,7 +97,7 @@ func buildTreeDisplay(node *TreeNode, indent int, state *TreeState) {
 
 	prefix := strings.Repeat("  ", indent)
 	symbol := ""
-	
+
 	if node.IsDir {
 		if state.expandedDirs[node.Path] {
 			symbol = "[-] "
@@ -155,12 +155,12 @@ func buildPURLDisplay(app *AppState) {
 			if !exists {
 				continue
 			}
-			
+
 			// Find the first valid match (file or snippet)
 			for _, match := range matches {
 				if match.ID == "file" || match.ID == "snippet" {
 					isProcessed := len(match.AuditCmd) > 0
-					
+
 					switch app.ViewFilter {
 					case "matched":
 						// Count all files with valid matches
@@ -180,14 +180,14 @@ func buildPURLDisplay(app *AppState) {
 				}
 			}
 		}
-		
+
 		// Skip PURLs with zero files based on view filter
 		if count == 0 {
 			continue
 		}
-		
+
 		displayName := fmt.Sprintf("%s (%d)", purlEntry.PURL, count)
-		
+
 		// Create a fake TreeNode for PURL entries
 		purlNode := &TreeNode{
 			Name:  purlEntry.PURL,
@@ -195,7 +195,7 @@ func buildPURLDisplay(app *AppState) {
 			IsDir: false,
 			Files: purlEntry.Files,
 		}
-		
+
 		line := fmt.Sprintf("    %s", displayName)
 		app.TreeState.displayLines = append(app.TreeState.displayLines, TreeDisplayLine{
 			Node:   purlNode,
@@ -225,22 +225,22 @@ func navigateTree(g *gocui.Gui, app *AppState, direction string) error {
 
 	// Use custom scrollable list for navigation
 	app.TreeList.Navigate(direction)
-	
+
 	// Update selected node based on new index
 	newIndex := app.TreeList.GetSelectedIndex()
 	if newIndex >= 0 && newIndex < len(app.TreeState.displayLines) {
 		app.TreeState.selectedNode = app.TreeState.displayLines[newIndex].Node
 	}
-	
+
 	// Re-render the tree
 	if v, err := g.View("tree"); err == nil {
 		isActive := (app.ActivePane == "tree")
 		app.TreeList.Render(v, isActive)
 	}
-	
+
 	updateFileList(g, app)
 	updateStatus(g, app)
-	
+
 	return nil
 }
 
@@ -251,11 +251,11 @@ func toggleTreeNode(g *gocui.Gui, app *AppState) error {
 
 	path := app.TreeState.selectedNode.Path
 	app.TreeState.expandedDirs[path] = !app.TreeState.expandedDirs[path]
-	
+
 	updateTreeDisplay(app)
 	displayTree(g, app)
 	updateFileList(g, app)
-	
+
 	return nil
 }
 
@@ -270,9 +270,9 @@ func countFilesInDirectory(dirPath string) int {
 	if globalApp == nil {
 		return 0
 	}
-	
+
 	count := 0
-	
+
 	for filePath, matches := range globalApp.ScanData.Files {
 		// Check if file is in this directory or subdirectories
 		isInDirectory := false
@@ -283,7 +283,7 @@ func countFilesInDirectory(dirPath string) int {
 			// Check if file path starts with directory path
 			isInDirectory = strings.HasPrefix(filePath, dirPath+"/")
 		}
-		
+
 		if isInDirectory {
 			if globalApp.ViewFilter == "all" {
 				// For "all" view, count all files in directory (not just matched ones)
@@ -293,7 +293,7 @@ func countFilesInDirectory(dirPath string) int {
 				for _, match := range matches {
 					if match.ID == "file" || match.ID == "snippet" {
 						isProcessed := len(match.AuditCmd) > 0
-						
+
 						switch globalApp.ViewFilter {
 						case "matched":
 							// Count all files with valid matches
@@ -312,6 +312,6 @@ func countFilesInDirectory(dirPath string) int {
 			}
 		}
 	}
-	
+
 	return count
 }

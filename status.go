@@ -35,7 +35,7 @@ func displayFileStatus(v *gocui.View, match *FileMatch) {
 		component = match.Purl[0]
 	}
 	fmt.Fprintf(v, "\033[1mType:\033[0m \033[37m%s\033[0m | \033[1mComponent:\033[0m \033[37m%s\033[0m", strings.ToUpper(match.ID), component)
-	
+
 	// Add licenses to line 1
 	if len(match.Licenses) > 0 {
 		licenseNames := make([]string, 0)
@@ -46,7 +46,7 @@ func displayFileStatus(v *gocui.View, match *FileMatch) {
 		fmt.Fprintf(v, " | \033[1mLicenses:\033[0m \033[37m%s\033[0m", licenses)
 	}
 	fmt.Fprintf(v, "\n")
-	
+
 	// Line 2: Audit status
 	auditStatus := "PENDING"
 	assessment := ""
@@ -57,7 +57,7 @@ func displayFileStatus(v *gocui.View, match *FileMatch) {
 			assessment = " (" + latest.Assessment + ")"
 		}
 	}
-	
+
 	fmt.Fprintf(v, "\033[1mAudit:\033[0m \033[37m%s%s\033[0m\n", auditStatus, assessment)
 }
 
@@ -75,9 +75,9 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 			if match.ID != "file" && match.ID != "snippet" {
 				continue
 			}
-			
+
 			matchingFiles++
-			
+
 			if len(match.AuditCmd) > 0 {
 				latest := match.AuditCmd[len(match.AuditCmd)-1]
 				if latest.Decision == "identified" {
@@ -96,7 +96,7 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 
 	// Line 1: File counts overview
 	fmt.Fprintf(v, "\033[1mTotal Files:\033[0m \033[37m%d\033[0m | \033[1mMatches:\033[0m \033[37m%d\033[0m", totalFilesInData, matchingFiles)
-	
+
 	// Line 2: Audit status breakdown and API status
 	apiStatus := "API key \033[1mOK\033[0m"
 	if app.APIKey == "" {

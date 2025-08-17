@@ -11,11 +11,11 @@ import (
 
 // ScrollableList represents a scrollable list component
 type ScrollableList struct {
-	Items           []string
-	SelectedIndex   int
-	ScrollOffset    int
-	ViewHeight      int
-	ShowScrollbar   bool
+	Items         []string
+	SelectedIndex int
+	ScrollOffset  int
+	ViewHeight    int
+	ShowScrollbar bool
 }
 
 // NewScrollableList creates a new scrollable list
@@ -96,7 +96,7 @@ func (sl *ScrollableList) adjustScroll() {
 	if sl.SelectedIndex >= sl.ScrollOffset+sl.ViewHeight {
 		sl.ScrollOffset = sl.SelectedIndex - sl.ViewHeight + 1
 	}
-	
+
 	// Ensure scroll offset is valid
 	if sl.ScrollOffset < 0 {
 		sl.ScrollOffset = 0
@@ -113,25 +113,25 @@ func (sl *ScrollableList) adjustScroll() {
 // Render displays the list in the given view
 func (sl *ScrollableList) Render(v *gocui.View, isActive bool) {
 	v.Clear()
-	
+
 	_, viewHeight := v.Size()
 	sl.ViewHeight = viewHeight
-	
+
 	if len(sl.Items) == 0 {
 		return
 	}
-	
+
 	sl.adjustScroll()
-	
+
 	// Render visible items
 	endIndex := sl.ScrollOffset + sl.ViewHeight
 	if endIndex > len(sl.Items) {
 		endIndex = len(sl.Items)
 	}
-	
+
 	for i := sl.ScrollOffset; i < endIndex; i++ {
 		item := sl.Items[i]
-		
+
 		// Highlight selected item if this pane is active
 		if i == sl.SelectedIndex && isActive {
 			fmt.Fprintf(v, "\033[43m\033[30m%s\033[0m\n", item)
@@ -139,7 +139,7 @@ func (sl *ScrollableList) Render(v *gocui.View, isActive bool) {
 			fmt.Fprintf(v, "%s\n", item)
 		}
 	}
-	
+
 	// Add scrollbar if needed
 	if sl.ShowScrollbar && len(sl.Items) > sl.ViewHeight {
 		sl.renderScrollbar(v)
@@ -152,7 +152,7 @@ func (sl *ScrollableList) renderScrollbar(v *gocui.View) {
 	if viewWidth < 2 || viewHeight < 3 {
 		return
 	}
-	
+
 	// Simple scroll indicator
 	totalItems := len(sl.Items)
 	if totalItems > sl.ViewHeight {

@@ -27,32 +27,32 @@ func getConfigFilePath() string {
 }
 
 type Config struct {
-	APIKey        string
-	PaneWidth     float64
-	ViewFilter     string
+	APIKey     string
+	PaneWidth  float64
+	ViewFilter string
 }
 
 func loadConfig() (*Config, error) {
 	configPath := getConfigFilePath()
-	
+
 	// Default config
 	config := &Config{
-		APIKey:        "",
-		PaneWidth:     0.5,
-		ViewFilter:     "all",
+		APIKey:     "",
+		PaneWidth:  0.5,
+		ViewFilter: "all",
 	}
-	
+
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return config, nil // Return default config
 	}
-	
+
 	// Read the config file
 	data, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return config, fmt.Errorf("failed to read config file: %v", err)
 	}
-	
+
 	// Parse INI format
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
@@ -60,12 +60,12 @@ func loadConfig() (*Config, error) {
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
 			continue
 		}
-		
+
 		if strings.Contains(line, "=") {
 			parts := strings.SplitN(line, "=", 2)
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
-			
+
 			switch key {
 			case "api_key":
 				config.APIKey = value
@@ -80,7 +80,7 @@ func loadConfig() (*Config, error) {
 			}
 		}
 	}
-	
+
 	return config, nil
 }
 
@@ -89,36 +89,36 @@ func loadAPIKey() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	if config.APIKey == "" {
 		return "", fmt.Errorf("API key not found")
 	}
-	
+
 	return config.APIKey, nil
 }
 
 func saveConfig(config *Config) error {
 	configPath := getConfigFilePath()
-	
+
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %v", err)
 	}
-	
+
 	// Create INI content
 	content := "# AuditCmd Configuration\n"
 	content += "# This file stores settings for the AuditCmd application\n\n"
 	content += fmt.Sprintf("api_key=%s\n", config.APIKey)
 	content += fmt.Sprintf("pane_width=%.2f\n", config.PaneWidth)
 	content += fmt.Sprintf("view_filter=%s\n", config.ViewFilter)
-	
+
 	// Write config to file with secure permissions
 	err := ioutil.WriteFile(configPath, []byte(content), 0600)
 	if err != nil {
 		return fmt.Errorf("failed to save config: %v", err)
 	}
-	
+
 	return nil
 }
 
@@ -126,7 +126,7 @@ func saveAPIKey(apiKey string) error {
 	// Load existing config
 	config, _ := loadConfig()
 	config.APIKey = apiKey
-	
+
 	return saveConfig(config)
 }
 
@@ -145,15 +145,15 @@ func promptForAPIKey() (string, error) {
 	fmt.Println("  • View actual file contents")
 	fmt.Println("  • See highlighted snippet matches")
 	fmt.Println()
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("Enter your SCANOSS API key (or 'skip' to continue without): ")
-		
+
 		// Try to read securely first
 		byteInput, err := term.ReadPassword(int(syscall.Stdin))
 		var input string
-		
+
 		if err != nil {
 			// Fallback to regular input if terminal doesn't support hidden input
 			fmt.Print("\n[Visible input] API key or 'skip': ")
@@ -166,17 +166,17 @@ func promptForAPIKey() (string, error) {
 			fmt.Println() // Print newline after hidden input
 			input = strings.TrimSpace(string(byteInput))
 		}
-		
+
 		if strings.ToLower(input) == "skip" {
 			fmt.Println("Continuing without API key. File contents will not be available.")
 			return "", nil // Return empty string to indicate skipped
 		}
-		
+
 		if input == "" {
 			fmt.Println("Please enter an API key or 'skip' to continue without one.")
 			continue
 		}
-		
+
 		return input, nil
 	}
 }
@@ -187,14 +187,14 @@ func getOrPromptAPIKey() (string, error) {
 	if err == nil {
 		return apiKey, nil
 	}
-	
+
 	// If not found, prompt user
 	fmt.Printf("Error loading API key: %v\n", err)
 	apiKey, err = promptForAPIKey()
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Save the API key for future use
 	if err := saveAPIKey(apiKey); err != nil {
 		fmt.Printf("Warning: failed to save API key: %v\n", err)
@@ -202,7 +202,7 @@ func getOrPromptAPIKey() (string, error) {
 	} else {
 		fmt.Println("API key saved to", getConfigFilePath())
 	}
-	
+
 	return apiKey, nil
 }
 
@@ -210,7 +210,7 @@ func savePaneWidth(width float64) error {
 	// Load existing config
 	config, _ := loadConfig()
 	config.PaneWidth = width
-	
+
 	return saveConfig(config)
 }
 
@@ -223,7 +223,7 @@ func saveViewFilter(viewFilter string) error {
 	// Load existing config
 	config, _ := loadConfig()
 	config.ViewFilter = viewFilter
-	
+
 	return saveConfig(config)
 }
 

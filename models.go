@@ -12,29 +12,29 @@ type ScanResult struct {
 }
 
 type FileMatch struct {
-	Component     string           `json:"component"`
-	Copyrights    []Copyright      `json:"copyrights"`
-	Cryptography  []interface{}    `json:"cryptography"`
-	Dependencies  []interface{}    `json:"dependencies"`
-	File          string           `json:"file"`
-	FileHash      string           `json:"file_hash"`
-	FileURL       string           `json:"file_url"`
-	Health        Health           `json:"health"`
-	ID            string           `json:"id"`
-	Latest        string           `json:"latest"`
-	Licenses      []License        `json:"licenses"`
-	OSSLines      interface{}      `json:"oss_lines"`
-	Purl          []string         `json:"purl"`
-	Quality       []Quality        `json:"quality"`
-	ReleaseDate   string           `json:"release_date"`
-	Server        Server           `json:"server"`
-	SourceHash    string           `json:"source_hash"`
-	Status        string           `json:"status"`
-	URL           string           `json:"url"`
-	URLHash       string           `json:"url_hash"`
-	URLStats      URLStats         `json:"url_stats"`
-	Version       string           `json:"version"`
-	AuditCmd      []AuditDecision  `json:"audit,omitempty"`
+	Component    string          `json:"component"`
+	Copyrights   []Copyright     `json:"copyrights"`
+	Cryptography []interface{}   `json:"cryptography"`
+	Dependencies []interface{}   `json:"dependencies"`
+	File         string          `json:"file"`
+	FileHash     string          `json:"file_hash"`
+	FileURL      string          `json:"file_url"`
+	Health       Health          `json:"health"`
+	ID           string          `json:"id"`
+	Latest       string          `json:"latest"`
+	Licenses     []License       `json:"licenses"`
+	OSSLines     interface{}     `json:"oss_lines"`
+	Purl         []string        `json:"purl"`
+	Quality      []Quality       `json:"quality"`
+	ReleaseDate  string          `json:"release_date"`
+	Server       Server          `json:"server"`
+	SourceHash   string          `json:"source_hash"`
+	Status       string          `json:"status"`
+	URL          string          `json:"url"`
+	URLHash      string          `json:"url_hash"`
+	URLStats     URLStats        `json:"url_stats"`
+	Version      string          `json:"version"`
+	AuditCmd     []AuditDecision `json:"audit,omitempty"`
 }
 
 type Copyright struct {
@@ -52,13 +52,13 @@ type Health struct {
 }
 
 type License struct {
-	ChecklistURL  string `json:"checklist_url,omitempty"`
-	Copyleft      string `json:"copyleft,omitempty"`
-	Name          string `json:"name"`
-	OSADLUpdated  string `json:"osadl_updated,omitempty"`
-	PatentHints   string `json:"patent_hints,omitempty"`
-	Source        string `json:"source"`
-	URL           string `json:"url,omitempty"`
+	ChecklistURL string `json:"checklist_url,omitempty"`
+	Copyleft     string `json:"copyleft,omitempty"`
+	Name         string `json:"name"`
+	OSADLUpdated string `json:"osadl_updated,omitempty"`
+	PatentHints  string `json:"patent_hints,omitempty"`
+	Source       string `json:"source"`
+	URL          string `json:"url,omitempty"`
 }
 
 type Quality struct {
@@ -75,10 +75,10 @@ type Server struct {
 }
 
 type URLStats struct {
-	IgnoredFiles  int `json:"ignored_files"`
-	IndexedFiles  int `json:"indexed_files"`
-	PackageSize   int `json:"package_size"`
-	SourceFiles   int `json:"source_files"`
+	IgnoredFiles int `json:"ignored_files"`
+	IndexedFiles int `json:"indexed_files"`
+	PackageSize  int `json:"package_size"`
+	SourceFiles  int `json:"source_files"`
 }
 
 type AuditDecision struct {
@@ -88,32 +88,32 @@ type AuditDecision struct {
 }
 
 type PURLRankEntry struct {
-	PURL     string
-	Files    []string
-	Count    int
+	PURL  string
+	Files []string
+	Count int
 }
 
 type AppState struct {
-	ScanData          ScanResult
-	CurrentFile       string
-	CurrentMatch      *FileMatch
-	FileTree          *TreeNode
-	TreeState         *TreeState
-	ActivePane        string
-	FilePath          string
-	CurrentFileList   []string
-	SelectedFileIndex int
-	PendingDecision   string
-	PendingAssessment string
-	PaneWidth         float64
-	ViewFilter        string // "all", "matched", "pending"
-	APIKey            string
-	ViewMode          string // "list" or "content"
-	TreeViewType      string // "directories" or "purls"
-	PURLRanking       []PURLRankEntry
-	InitialFileListDone bool   // Track if initial file list has been populated
-	FileList          *ScrollableList // Custom scrollable file list
-	TreeList          *ScrollableList // Custom scrollable tree list
+	ScanData            ScanResult
+	CurrentFile         string
+	CurrentMatch        *FileMatch
+	FileTree            *TreeNode
+	TreeState           *TreeState
+	ActivePane          string
+	FilePath            string
+	CurrentFileList     []string
+	SelectedFileIndex   int
+	PendingDecision     string
+	PendingAssessment   string
+	PaneWidth           float64
+	ViewFilter          string // "all", "matched", "pending"
+	APIKey              string
+	ViewMode            string // "list" or "content"
+	TreeViewType        string // "directories" or "purls"
+	PURLRanking         []PURLRankEntry
+	InitialFileListDone bool            // Track if initial file list has been populated
+	FileList            *ScrollableList // Custom scrollable file list
+	TreeList            *ScrollableList // Custom scrollable tree list
 }
 
 type TreeNode struct {

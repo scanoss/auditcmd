@@ -21,9 +21,9 @@ func calculateProgress(app *AppState) (int, int, int) {
 			if match.ID != "file" && match.ID != "snippet" {
 				continue
 			}
-			
+
 			totalFiles++
-			
+
 			// Check if file has been audited (any decision made)
 			if len(match.AuditCmd) > 0 {
 				auditedFiles++
@@ -49,7 +49,7 @@ func displayProgressBar(g *gocui.Gui, app *AppState) error {
 	v.Clear()
 
 	auditedFiles, totalFiles, percentage := calculateProgress(app)
-	
+
 	// Get the width of the progress bar view
 	maxX, _ := v.Size()
 	if maxX <= 0 {
@@ -69,20 +69,20 @@ func displayProgressBar(g *gocui.Gui, app *AppState) error {
 
 	// Build progress bar
 	var progressBar strings.Builder
-	
+
 	// Add filled portion (green background)
 	for i := 0; i < filledWidth; i++ {
 		progressBar.WriteString("█")
 	}
-	
-	// Add empty portion  
+
+	// Add empty portion
 	for i := 0; i < emptyWidth; i++ {
 		progressBar.WriteString("░")
 	}
 
 	// Add percentage and count text
 	progressText := fmt.Sprintf(" %3d%% (%d/%d)", percentage, auditedFiles, totalFiles)
-	
+
 	// Display with colors
 	if percentage == 100 {
 		fmt.Fprintf(v, "\033[42m\033[30m%s\033[0m\033[92m%s\033[0m", progressBar.String(), progressText)
