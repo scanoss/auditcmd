@@ -106,12 +106,14 @@ type AppState struct {
 	PendingDecision   string
 	PendingAssessment string
 	PaneWidth         float64
-	HideIdentified    bool   // Actually hides all processed files
+	ViewFilter        string // "all", "matched", "pending"
 	APIKey            string
 	ViewMode          string // "list" or "content"
 	TreeViewType      string // "directories" or "purls"
 	PURLRanking       []PURLRankEntry
 	InitialFileListDone bool   // Track if initial file list has been populated
+	FileList          *ScrollableList // Custom scrollable file list
+	TreeList          *ScrollableList // Custom scrollable tree list
 }
 
 type TreeNode struct {

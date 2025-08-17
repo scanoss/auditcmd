@@ -18,7 +18,6 @@ func initTreeState(app *AppState) {
 		displayLines: make([]TreeDisplayLine, 0),
 	}
 	app.TreeState.expandedDirs[""] = true
-	updateTreeDisplay(app)
 	
 	// Set initial selected node
 	if app.TreeViewType == "purls" {
@@ -32,9 +31,26 @@ func initTreeState(app *AppState) {
 			}
 		}
 	} else {
-		// In directory mode, select first child if available
+		// In directory mode, intelligently select initial directory
 		if len(app.FileTree.Children) > 0 {
-			app.TreeState.selectedNode = app.FileTree.Children[0]
+			selectedNode := app.FileTree.Children[0] // Default to first child
+			
+			// If we're in "matched" or "pending" mode, try to find a directory with matching files
+			if app.ViewFilter == "matched" || app.ViewFilter == "pending" {
+				for _, child := range app.FileTree.Children {
+					if child.IsDir {
+						fileCount := countFilesInDirectory(child.Path)
+						if fileCount > 0 {
+							selectedNode = child
+							break
+						}
+					}
+				}
+			}
+			
+			app.TreeState.selectedNode = selectedNode
+		} else {
+			app.TreeState.selectedNode = app.FileTree
 		}
 	}
 	
@@ -48,6 +64,26 @@ func updateTreeDisplay(app *AppState) {
 		buildPURLDisplay(app)
 	} else {
 		buildTreeDisplay(app.FileTree, 0, app.TreeState)
+	}
+	
+	// Update custom scrollable list with display lines
+	treeItems := make([]string, 0, len(app.TreeState.displayLines))
+	for _, line := range app.TreeState.displayLines {
+		treeItems = append(treeItems, line.Line)
+	}
+	app.TreeList.SetItems(treeItems)
+	
+	// Find current selection index in display lines
+	currentIndex := -1
+	for i, line := range app.TreeState.displayLines {
+		if line.Node == app.TreeState.selectedNode {
+			currentIndex = i
+			break
+		}
+	}
+	if currentIndex >= 0 {
+		app.TreeList.SelectedIndex = currentIndex
+		app.TreeList.adjustScroll()
 	}
 }
 
@@ -82,8 +118,8 @@ func buildTreeDisplay(node *TreeNode, indent int, state *TreeState) {
 		}
 	}
 
-	// Skip directories with zero files when hiding audited files
-	if node.IsDir && globalApp != nil && globalApp.HideIdentified && fileCount == 0 {
+	// Skip directories with zero files based on view filter
+	if node.IsDir && globalApp != nil && fileCount == 0 {
 		return
 	}
 
@@ -123,13 +159,21 @@ func buildPURLDisplay(app *AppState) {
 			// Find the first valid match (file or snippet)
 			for _, match := range matches {
 				if match.ID == "file" || match.ID == "snippet" {
-					if app.HideIdentified {
-						// Count only pending files when audited files are hidden
-						if len(match.AuditCmd) == 0 {
+					isProcessed := len(match.AuditCmd) > 0
+					
+					switch app.ViewFilter {
+					case "matched":
+						// Count all files with valid matches
+						count++
+					case "pending":
+						// Count only unprocessed files
+						if !isProcessed {
 							count++
 						}
-					} else {
-						// Count all files when audited files are shown
+					case "all":
+						// Count all files with valid matches
+						count++
+					default:
 						count++
 					}
 					break // Only count first valid match per file
@@ -137,8 +181,8 @@ func buildPURLDisplay(app *AppState) {
 			}
 		}
 		
-		// Skip PURLs with zero files when hiding audited files
-		if app.HideIdentified && count == 0 {
+		// Skip PURLs with zero files based on view filter
+		if count == 0 {
 			continue
 		}
 		
@@ -167,15 +211,9 @@ func displayTree(g *gocui.Gui, app *AppState) error {
 		return err
 	}
 
-	v.Clear()
-	
-	for i, line := range app.TreeState.displayLines {
-		fmt.Fprintf(v, "%s\n", line.Line)
-		
-		if i > 100 {
-			break
-		}
-	}
+	// Use custom scrollable list for rendering
+	isActive := (app.ActivePane == "tree")
+	app.TreeList.Render(v, isActive)
 
 	return nil
 }
@@ -185,28 +223,21 @@ func navigateTree(g *gocui.Gui, app *AppState, direction string) error {
 		return nil
 	}
 
-	currentIndex := -1
-	for i, line := range app.TreeState.displayLines {
-		if line.Node == app.TreeState.selectedNode {
-			currentIndex = i
-			break
-		}
+	// Use custom scrollable list for navigation
+	app.TreeList.Navigate(direction)
+	
+	// Update selected node based on new index
+	newIndex := app.TreeList.GetSelectedIndex()
+	if newIndex >= 0 && newIndex < len(app.TreeState.displayLines) {
+		app.TreeState.selectedNode = app.TreeState.displayLines[newIndex].Node
 	}
-
-	switch direction {
-	case "up":
-		if currentIndex > 0 {
-			app.TreeState.selectedNode = app.TreeState.displayLines[currentIndex-1].Node
-			currentIndex--
-		}
-	case "down":
-		if currentIndex < len(app.TreeState.displayLines)-1 {
-			app.TreeState.selectedNode = app.TreeState.displayLines[currentIndex+1].Node
-			currentIndex++
-		}
+	
+	// Re-render the tree
+	if v, err := g.View("tree"); err == nil {
+		isActive := (app.ActivePane == "tree")
+		app.TreeList.Render(v, isActive)
 	}
-
-	displayTree(g, app)
+	
 	updateFileList(g, app)
 	updateStatus(g, app)
 	
@@ -246,27 +277,37 @@ func countFilesInDirectory(dirPath string) int {
 		// Check if file is in this directory or subdirectories
 		isInDirectory := false
 		if dirPath == "" {
-			// Root directory - count all files
-			isInDirectory = true
+			// Root directory - only count files with no "/" (actual root files)
+			isInDirectory = !strings.Contains(filePath, "/")
 		} else {
 			// Check if file path starts with directory path
 			isInDirectory = strings.HasPrefix(filePath, dirPath+"/")
 		}
 		
 		if isInDirectory {
-			for _, match := range matches {
-				// Only count files with id = "file" or "snippet"
-				if match.ID == "file" || match.ID == "snippet" {
-					if globalApp.HideIdentified {
-						// Show pending count when audited files are hidden
-						if len(match.AuditCmd) == 0 {
+			if globalApp.ViewFilter == "all" {
+				// For "all" view, count all files in directory (not just matched ones)
+				count++
+			} else {
+				// For other views, only count files with valid matches
+				for _, match := range matches {
+					if match.ID == "file" || match.ID == "snippet" {
+						isProcessed := len(match.AuditCmd) > 0
+						
+						switch globalApp.ViewFilter {
+						case "matched":
+							// Count all files with valid matches
+							count++
+						case "pending":
+							// Count only unprocessed files
+							if !isProcessed {
+								count++
+							}
+						default:
 							count++
 						}
-					} else {
-						// Show total matches count when audited files are shown
-						count++
+						break // Only count first valid match per file
 					}
-					break // Only count first valid match per file
 				}
 			}
 		}

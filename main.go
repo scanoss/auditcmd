@@ -62,9 +62,11 @@ func main() {
 		CurrentFileList:   make([]string, 0),
 		SelectedFileIndex: 0,
 		PaneWidth:         loadPaneWidth(),        // Load from config
-		HideIdentified:    loadHideIdentified(),   // Load from config
+		ViewFilter:        loadViewFilter(),       // Load from config
 		ViewMode:          "list",
 		TreeViewType:      "directories",
+		FileList:          NewScrollableList([]string{}),
+		TreeList:          NewScrollableList([]string{}),
 	}
 
 	if err := loadScanData(app); err != nil {
@@ -74,6 +76,7 @@ func main() {
 	if err := buildFileTree(app); err != nil {
 		log.Fatalf("Failed to build file tree: %v", err)
 	}
+	
 
 	if err := buildPURLRanking(app); err != nil {
 		log.Fatalf("Failed to build PURL ranking: %v", err)
@@ -92,6 +95,7 @@ func main() {
 
 	setGlobalApp(app) // Set global reference for pending file counting
 	initTreeState(app)
+	
 
 	g, err := gocui.NewGui(gocui.OutputNormal, true)
 	if err != nil {
@@ -104,16 +108,11 @@ func main() {
 	}
 	defer g.Close()
 
-	g.Highlight = true
-	g.Cursor = true
-	g.SelFgColor = gocui.ColorYellow
+	g.Highlight = false
+	g.Cursor = false
+	g.SelFgColor = gocui.ColorDefault
 	
-	// Set initial current view based on ActivePane
-	if app.ActivePane == "tree" {
-		g.SetCurrentView("tree")
-	} else {
-		g.SetCurrentView("files")
-	}
+	// Don't set initial current view to avoid gocui cursor artifacts
 	
 	// Initial layout and populate all views
 	if err := layoutWithApp(g, app); err != nil {
@@ -123,7 +122,13 @@ func main() {
 	// Initialize views that don't depend on the main loop
 	updatePaneTitles(g, app)
 	displayTree(g, app)
-	// Don't call updateFileList here - it will be called in the manager function
+	
+	// Render the initial file list (already populated by initTreeState)
+	if v, err := g.View("files"); err == nil {
+		isActive := (app.ActivePane == "files")
+		app.FileList.Render(v, isActive)
+	}
+	
 	
 	g.SetManagerFunc(func(g *gocui.Gui) error {
 		if err := layoutWithApp(g, app); err != nil {
@@ -132,11 +137,8 @@ func main() {
 		updatePaneTitles(g, app)
 		displayTree(g, app)
 		
-		// Do initial file list update once the GUI is fully running
-		if !app.InitialFileListDone {
-			updateFileList(g, app)
-			app.InitialFileListDone = true
-		}
+		// Always ensure file list is updated
+		updateFileList(g, app)
 		
 		updateStatus(g, app)
 		updateHelpBar(g, app)
@@ -147,6 +149,9 @@ func main() {
 	if err := keybindings(g, app); err != nil {
 		log.Panicln(err)
 	}
+
+	// Force initial file list update after everything is set up
+	updateFileList(g, app)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
 		log.Panicln(err)
@@ -222,6 +227,45 @@ func buildFileTree(app *AppState) error {
 				current = node
 			}
 		}
+	}
+
+	// If no directories were created, add a virtual "All Files" node
+	if len(root.Children) == 0 && len(paths) > 0 {
+		allFilesNode := &TreeNode{
+			Name:     "All Files",
+			Path:     "",
+			IsDir:    true,
+			Parent:   root,
+			Children: make([]*TreeNode, 0),
+			Files:    make([]string, 0),
+		}
+		root.Children = append(root.Children, allFilesNode)
+	}
+
+	// Check if there are files in the root directory (no "/" in path)
+	rootFiles := make([]string, 0)
+	for filePath := range app.ScanData.Files {
+		if !strings.Contains(filePath, "/") {
+			rootFiles = append(rootFiles, filePath)
+		}
+	}
+	
+	// If there are files in root, add a "." directory entry at the beginning
+	if len(rootFiles) > 0 {
+		rootDirNode := &TreeNode{
+			Name:     ".",
+			Path:     "",
+			IsDir:    true,
+			Parent:   root,
+			Children: make([]*TreeNode, 0),
+			Files:    make([]string, 0),
+		}
+		
+		// Insert at the beginning
+		newChildren := make([]*TreeNode, 0, len(root.Children)+1)
+		newChildren = append(newChildren, rootDirNode)
+		newChildren = append(newChildren, root.Children...)
+		root.Children = newChildren
 	}
 
 	app.FileTree = root
@@ -305,9 +349,7 @@ func layoutWithApp(g *gocui.Gui, app *AppState) error {
 			return err
 		}
 		v.Title = "Directories" // Default title, will be updated by updatePaneTitles
-		v.Highlight = true
-		v.SelBgColor = gocui.ColorYellow
-		v.SelFgColor = gocui.ColorBlack
+		v.Highlight = false // Disable gocui highlighting
 	}
 
 	// Files pane
@@ -317,9 +359,7 @@ func layoutWithApp(g *gocui.Gui, app *AppState) error {
 		}
 		v.Title = "Files" // Default title, will be updated by updatePaneTitles
 		v.Wrap = true
-		v.Highlight = true
-		v.SelBgColor = gocui.ColorYellow
-		v.SelFgColor = gocui.ColorBlack
+		v.Highlight = false // Disable gocui highlighting
 	}
 
 	// Help bar with status on the right
@@ -461,7 +501,7 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 		if isAuditDialogOpen(g) {
 			return nil
 		}
-		return toggleHideIdentified(g, app)
+		return cycleViewFilter(g, app)
 	}); err != nil {
 		return err
 	}
@@ -469,7 +509,7 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 		if isAuditDialogOpen(g) {
 			return nil
 		}
-		return toggleHideIdentified(g, app)
+		return cycleViewFilter(g, app)
 	}); err != nil {
 		return err
 	}
@@ -483,6 +523,8 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 	if err := g.SetKeybinding("", gocui.KeyArrowUp, gocui.ModShift, func(g *gocui.Gui, v *gocui.View) error {
 		if app.ViewMode == "content" {
 			return scrollFileContent(g, app, "up", true)
+		} else if app.ActivePane == "files" && app.ViewMode == "list" {
+			return navigateFileListPage(g, app, "up")
 		}
 		return nil
 	}); err != nil {
@@ -493,6 +535,8 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 	if err := g.SetKeybinding("", gocui.KeyArrowDown, gocui.ModShift, func(g *gocui.Gui, v *gocui.View) error {
 		if app.ViewMode == "content" {
 			return scrollFileContent(g, app, "down", true)
+		} else if app.ActivePane == "files" && app.ViewMode == "list" {
+			return navigateFileListPage(g, app, "down")
 		}
 		return nil
 	}); err != nil {
@@ -503,6 +547,8 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if app.ViewMode == "content" {
 			return scrollFileContent(g, app, "up", true)
+		} else if app.ActivePane == "files" && app.ViewMode == "list" {
+			return navigateFileListPage(g, app, "up")
 		}
 		return nil
 	}); err != nil {
@@ -513,6 +559,8 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 	if err := g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
 		if app.ViewMode == "content" {
 			return scrollFileContent(g, app, "down", true)
+		} else if app.ActivePane == "files" && app.ViewMode == "list" {
+			return navigateFileListPage(g, app, "down")
 		}
 		return nil
 	}); err != nil {
@@ -573,13 +621,17 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 func switchPane(g *gocui.Gui, app *AppState) error {
 	if app.ActivePane == "tree" {
 		app.ActivePane = "files"
-		if _, err := g.SetCurrentView("files"); err != nil {
-			return err
+		// Re-render file list to show active highlighting
+		if v, err := g.View("files"); err == nil {
+			isActive := (app.ActivePane == "files")
+			app.FileList.Render(v, isActive)
 		}
 	} else {
 		app.ActivePane = "tree"
-		if _, err := g.SetCurrentView("tree"); err != nil {
-			return err
+		// Re-render tree list to show active highlighting
+		if v, err := g.View("tree"); err == nil {
+			isActive := (app.ActivePane == "tree")
+			app.TreeList.Render(v, isActive)
 		}
 	}
 	
@@ -623,11 +675,33 @@ func resizePane(g *gocui.Gui, app *AppState, delta float64) error {
 	return nil
 }
 
-func toggleHideIdentified(g *gocui.Gui, app *AppState) error {
-	app.HideIdentified = !app.HideIdentified
+func cycleViewFilter(g *gocui.Gui, app *AppState) error {
+	if app.TreeViewType == "purls" {
+		// In PURL mode, only cycle between matched and pending
+		switch app.ViewFilter {
+		case "matched":
+			app.ViewFilter = "pending"
+		case "pending":
+			app.ViewFilter = "matched"
+		default:
+			app.ViewFilter = "matched" // Default to matched in PURL mode
+		}
+	} else {
+		// In directory mode, cycle through: all -> matched -> pending -> all
+		switch app.ViewFilter {
+		case "all":
+			app.ViewFilter = "matched"
+		case "matched":
+			app.ViewFilter = "pending"
+		case "pending":
+			app.ViewFilter = "all"
+		default:
+			app.ViewFilter = "all" // Default case
+		}
+	}
 	
 	// Save the new setting to config
-	if err := saveHideIdentified(app.HideIdentified); err != nil {
+	if err := saveViewFilter(app.ViewFilter); err != nil {
 		// Don't fail the toggle operation if config save fails
 		// Just continue with the toggle
 	}
@@ -647,6 +721,8 @@ func toggleHideIdentified(g *gocui.Gui, app *AppState) error {
 		// If current selection is not visible, select first available node
 		if !currentVisible {
 			app.TreeState.selectedNode = app.TreeState.displayLines[0].Node
+			app.TreeList.SelectedIndex = 0
+			app.TreeList.adjustScroll()
 		}
 	}
 	
@@ -658,6 +734,10 @@ func toggleHideIdentified(g *gocui.Gui, app *AppState) error {
 func toggleTreeViewType(g *gocui.Gui, app *AppState) error {
 	if app.TreeViewType == "directories" {
 		app.TreeViewType = "purls"
+		// When switching to PURL mode, if currently in "all" mode, switch to "matched"
+		if app.ViewFilter == "all" {
+			app.ViewFilter = "matched"
+		}
 		// Select first PURL if available
 		if len(app.PURLRanking) > 0 {
 			app.TreeState.selectedNode = &TreeNode{
@@ -747,14 +827,14 @@ func updatePaneTitles(g *gocui.Gui, app *AppState) error {
 	if v, err := g.View("files"); err == nil {
 		if app.ActivePane == "files" {
 			if app.ViewMode == "content" {
-				v.Title = "[ File Content ]"
+				v.Title = fmt.Sprintf("[ %s ]", app.CurrentFile)
 			} else {
 				v.Title = "[ Files ]"
 			}
 			v.TitleColor = gocui.ColorYellow
 		} else {
 			if app.ViewMode == "content" {
-				v.Title = "File Content"
+				v.Title = app.CurrentFile
 			} else {
 				v.Title = "Files"
 			}
@@ -784,7 +864,7 @@ func updateHelpBar(g *gocui.Gui, app *AppState) error {
 	} else {
 		toggleViewText = "[P]URLs"
 	}
-	helpText := fmt.Sprintf("Tab: Switch panes | [T]oggle audited | [A]ccept/[I]gnore match | [E]xport CSV | %s | [Q]uit", toggleViewText)
+	helpText := fmt.Sprintf("Tab: Switch panes | [T]oggle view | [A]ccept/[I]gnore match | [E]xport CSV | %s | [Q]uit", toggleViewText)
 	
 	// Calculate padding to right-justify status
 	maxX, _ := v.Size()
@@ -805,28 +885,9 @@ func updateHelpBar(g *gocui.Gui, app *AppState) error {
 }
 
 func updateCursorPositions(g *gocui.Gui, app *AppState) error {
-	// Update tree cursor position
-	if v, err := g.View("tree"); err == nil {
-		currentIndex := -1
-		for i, line := range app.TreeState.displayLines {
-			if line.Node == app.TreeState.selectedNode {
-				currentIndex = i
-				break
-			}
-		}
-		if currentIndex >= 0 {
-			v.SetCursor(0, currentIndex)
-		}
-	}
+	// Tree cursor is now handled by custom ScrollableList - no need to manage gocui cursor
 	
-	// Update files cursor position (only in list mode)
-	if app.ViewMode == "list" {
-		if v, err := g.View("files"); err == nil {
-			if app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
-				v.SetCursor(0, app.SelectedFileIndex)
-			}
-		}
-	}
+	// Files cursor is also handled by custom ScrollableList - no need to manage gocui cursor
 	
 	return nil
 }

@@ -102,9 +102,9 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 	if app.APIKey == "" {
 		apiStatus = "API key \033[1mNO\033[0m"
 	}
-	auditedLabel := "shown"
-	if app.HideIdentified {
-		auditedLabel = "hidden"
+	viewLabel := strings.Title(app.ViewFilter)
+	if app.ViewFilter == "" {
+		viewLabel = "All"
 	}
-	fmt.Fprintf(v, "\n\033[1mPending:\033[0m \033[37m%d\033[0m | \033[1mIdentified:\033[0m \033[37m%d\033[0m | \033[1mIgnored:\033[0m \033[37m%d\033[0m | \033[1mAudited:\033[0m \033[37m%s\033[0m | %s", pendingFiles, identifiedFiles, ignoredFiles, auditedLabel, apiStatus)
+	fmt.Fprintf(v, "\n\033[1mPending:\033[0m \033[37m%d\033[0m | \033[1mIdentified:\033[0m \033[37m%d\033[0m | \033[1mIgnored:\033[0m \033[37m%d\033[0m | \033[1mView:\033[0m \033[37m%s\033[0m | %s", pendingFiles, identifiedFiles, ignoredFiles, viewLabel, apiStatus)
 }

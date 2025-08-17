@@ -25,10 +25,6 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 		return nil // Content is managed by displayFileContent
 	}
 
-	v.Clear()
-
-	// Title will be set by updatePaneTitles
-
 	if app.TreeState == nil || app.TreeState.selectedNode == nil {
 		return nil
 	}
@@ -49,66 +45,20 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 		files = getFilesInDirectory(app, node.Path)
 	}
 	
-	// Filter files based on HideIdentified setting
-	filteredFiles := make([]string, 0)
-	debugTotalFiles := len(files)
-	debugIdentifiedFiles := 0
-	debugFilteredOut := 0
+	// Filter and format files with status indicators
+	displayFiles := make([]string, 0)
 	
 	for _, filePath := range files {
 		matches := app.ScanData.Files[filePath]
-		if len(matches) > 0 {
-			// Find the first valid match (file or snippet)
-			var match *FileMatch
-			for j, m := range matches {
-				if m.ID == "file" || m.ID == "snippet" {
-					match = &matches[j]
-					break
-				}
-			}
-			
-			if match != nil {
-				// Check if file has been processed (has any audit decision)
-				isProcessed := len(match.AuditCmd) > 0
-				isIdentified := false
-				if isProcessed {
-					latest := match.AuditCmd[len(match.AuditCmd)-1]
-					decision := strings.ToLower(strings.TrimSpace(latest.Decision))
-					isIdentified = (decision == "identified")
-					if isIdentified {
-						debugIdentifiedFiles++
-					}
-				}
-				
-				// Filtering logic: if toggle is ON, hide ALL processed files (both identified and ignored)
-				shouldShow := true
-				if app.HideIdentified && isProcessed {
-					shouldShow = false
-					debugFilteredOut++
-				}
-				
-				if shouldShow {
-					filteredFiles = append(filteredFiles, filePath)
-				}
-			}
+		
+		// Apply view filter
+		shouldShow := false
+		statusIcon := "- "
+		
+		if app.ViewFilter == "all" {
+			shouldShow = true
 		}
-	}
-	
-	// Debug variables for potential future use
-	_ = debugTotalFiles
-	_ = debugIdentifiedFiles  
-	_ = debugFilteredOut
-	
-	app.CurrentFileList = filteredFiles
-	// Reset selection if out of bounds or if no files
-	if len(filteredFiles) == 0 {
-		app.SelectedFileIndex = -1 // No selection when no files
-	} else if app.SelectedFileIndex >= len(filteredFiles) {
-		app.SelectedFileIndex = 0
-	}
-	
-	for _, filePath := range filteredFiles {
-		matches := app.ScanData.Files[filePath]
+		
 		if len(matches) > 0 {
 			// Find the first valid match (file or snippet)
 			var match *FileMatch
@@ -120,35 +70,42 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 			}
 			
 			if match != nil {
-				// Display file with grayed out style if processed
-				isProcessed := len(match.AuditCmd) > 0
-				line := filePath
+				if app.ViewFilter == "matched" || app.ViewFilter == "all" {
+					shouldShow = true
+				}
 				
-				// Check if this file has been identified (vs ignored) 
-				isIdentified := false
+				// Check if file has been processed
+				isProcessed := len(match.AuditCmd) > 0
 				if isProcessed {
 					latest := match.AuditCmd[len(match.AuditCmd)-1]
 					decision := strings.ToLower(strings.TrimSpace(latest.Decision))
-					isIdentified = (decision == "identified")
-				}
-				
-				// Use different visual indicators for file status
-				if isProcessed {
-					if isIdentified {
-						// Identified file: show with checkmark
-						fmt.Fprintf(v, "✓ %s\n", line)
+					if decision == "identified" {
+						statusIcon = "✓ "
 					} else {
-						// Ignored file: show with X 
-						fmt.Fprintf(v, "✗ %s\n", line)
+						statusIcon = "✗ "
 					}
 				} else {
-					// Unprocessed file: normal display
-					fmt.Fprintf(v, "  %s\n", line)
+					statusIcon = "? "
+					if app.ViewFilter == "pending" {
+						shouldShow = true
+					}
 				}
 			}
 		}
+		
+		if shouldShow {
+			displayFiles = append(displayFiles, statusIcon+filePath)
+		}
 	}
-
+	
+	// Update our custom scrollable list
+	app.FileList.SetItems(displayFiles)
+	app.CurrentFileList = files // Keep original file paths for selection
+	
+	// Render the custom list
+	isActive := (app.ActivePane == "files")
+	app.FileList.Render(v, isActive)
+	
 	return nil
 }
 
@@ -158,26 +115,33 @@ func getFilesInDirectory(app *AppState, dirPath string) []string {
 	// If dirPath is empty (root), show all files
 	// Otherwise, show files that are in this directory or subdirectories
 	for filePath, matches := range app.ScanData.Files {
-		// Filter by match type - only show files with id = "file" or "snippet"
-		hasValidMatch := false
-		for _, match := range matches {
-			if match.ID == "file" || match.ID == "snippet" {
-				hasValidMatch = true
-				break
-			}
-		}
 		
-		if !hasValidMatch {
-			continue
+		if app.ViewFilter == "all" {
+			// In "all" mode, include all files regardless of match status
+		} else {
+			// Filter by match type - only show files with id = "file" or "snippet"
+			hasValidMatch := false
+			for _, match := range matches {
+				if match.ID == "file" || match.ID == "snippet" {
+					hasValidMatch = true
+					break
+				}
+			}
+			
+			if !hasValidMatch {
+				continue
+			}
 		}
 		
 		// Check if file is in the selected directory or its subdirectories
 		if dirPath == "" {
-			// Root directory - show all valid files
-			files = append(files, filePath)
+			// Root directory - only show files with no "/" (actual root files)
+			if !strings.Contains(filePath, "/") {
+				files = append(files, filePath)
+			}
 		} else {
 			// Check if file is in this directory or subdirectories
-			if strings.HasPrefix(filePath, dirPath+"/") || strings.HasPrefix(filePath, dirPath) {
+			if strings.HasPrefix(filePath, dirPath+"/") {
 				files = append(files, filePath)
 			}
 		}
@@ -187,6 +151,7 @@ func getFilesInDirectory(app *AppState, dirPath string) []string {
 	sort.Strings(files)
 	return files
 }
+
 
 func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 	v, err := g.View("files")
@@ -201,7 +166,7 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 
 	matches, exists := app.ScanData.Files[filePath]
 	if !exists || len(matches) == 0 {
-		fmt.Fprintf(v, "No match data found for file: %s", filePath)
+		fmt.Fprintf(v, "No match data found for this file")
 		return nil
 	}
 
@@ -215,7 +180,7 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 	}
 	
 	if match == nil {
-		fmt.Fprintf(v, "No valid matches found for file: %s", filePath)
+		fmt.Fprintf(v, "No valid matches found for this file")
 		return nil
 	}
 
@@ -351,41 +316,34 @@ func contains(slice []int, item int) bool {
 }
 
 func navigateFileList(g *gocui.Gui, app *AppState, direction string) error {
-	if len(app.CurrentFileList) == 0 {
-		return nil
-	}
-
-	// Initialize selection if needed
-	if app.SelectedFileIndex < 0 {
-		app.SelectedFileIndex = 0
-	}
-
-	switch direction {
-	case "up":
-		if app.SelectedFileIndex > 0 {
-			app.SelectedFileIndex--
-		}
-	case "down":
-		if app.SelectedFileIndex < len(app.CurrentFileList)-1 {
-			app.SelectedFileIndex++
-		}
-	}
-
-	// Auto-scroll the view to keep the selected item visible
+	// Use our custom scrollable list for navigation
+	app.FileList.Navigate(direction)
+	
+	// Update selected file index to match
+	app.SelectedFileIndex = app.FileList.GetSelectedIndex()
+	
+	// Re-render the list
 	if v, err := g.View("files"); err == nil {
-		_, viewHeight := v.Size()
-		if viewHeight > 0 {
-			// Calculate if we need to scroll
-			ox, oy := v.Origin()
-			if app.SelectedFileIndex < oy {
-				v.SetOrigin(ox, app.SelectedFileIndex)
-			} else if app.SelectedFileIndex >= oy+viewHeight {
-				v.SetOrigin(ox, app.SelectedFileIndex-viewHeight+1)
-			}
-		}
+		isActive := (app.ActivePane == "files")
+		app.FileList.Render(v, isActive)
 	}
+	
+	return nil
+}
 
-	updateFileList(g, app)
+func navigateFileListPage(g *gocui.Gui, app *AppState, direction string) error {
+	// Use our custom scrollable list for page navigation
+	app.FileList.NavigatePage(direction)
+	
+	// Update selected file index to match
+	app.SelectedFileIndex = app.FileList.GetSelectedIndex()
+	
+	// Re-render the list
+	if v, err := g.View("files"); err == nil {
+		isActive := (app.ActivePane == "files")
+		app.FileList.Render(v, isActive)
+	}
+	
 	return nil
 }
 
