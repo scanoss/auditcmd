@@ -186,8 +186,13 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 
 	app.CurrentMatch = match
 
-	if match.FileURL != "" {
-		if app.APIKey == "" {
+	// Check if file_url is empty or only whitespace
+	if strings.TrimSpace(match.FileURL) == "" {
+		fmt.Fprintf(v, "No file_url available for this file. This requires scanning with an API key.")
+		return nil
+	}
+
+	if app.APIKey == "" {
 			fmt.Fprintf(v, "File Content Not Available\n")
 			fmt.Fprintf(v, "========================\n\n")
 			fmt.Fprintf(v, "API key required to fetch file contents from:\n")
@@ -234,9 +239,6 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 				}
 			}
 		}
-	} else {
-		fmt.Fprintf(v, "File content URL not available")
-	}
 
 	return nil
 }
