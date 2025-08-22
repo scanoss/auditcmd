@@ -64,6 +64,8 @@ func displayFileStatus(v *gocui.View, match *FileMatch) {
 func displayDirectoryStatus(v *gocui.View, app *AppState) {
 	totalFilesInData := len(app.ScanData.Files)
 	matchingFiles := 0
+	fileMatches := 0
+	snippetMatches := 0
 	pendingFiles := 0
 	identifiedFiles := 0
 	ignoredFiles := 0
@@ -77,6 +79,13 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 			}
 			
 			matchingFiles++
+			
+			// Count by match type
+			if match.ID == "file" {
+				fileMatches++
+			} else if match.ID == "snippet" {
+				snippetMatches++
+			}
 			
 			if len(match.AuditCmd) > 0 {
 				latest := match.AuditCmd[len(match.AuditCmd)-1]
@@ -94,8 +103,11 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 		}
 	}
 
+	// Calculate no match files
+	noMatchFiles := totalFilesInData - matchingFiles
+
 	// Line 1: File counts overview
-	fmt.Fprintf(v, "\033[1mTotal Files:\033[0m \033[37m%d\033[0m | \033[1mMatches:\033[0m \033[37m%d\033[0m", totalFilesInData, matchingFiles)
+	fmt.Fprintf(v, "\033[1mTotal Files:\033[0m \033[37m%d\033[0m | \033[1mMatches:\033[0m \033[37m%d\033[0m (\033[37m%d file / %d snippet\033[0m) | \033[1mNo Match:\033[0m \033[37m%d\033[0m", totalFilesInData, matchingFiles, fileMatches, snippetMatches, noMatchFiles)
 	
 	// Line 2: Audit status breakdown and API status
 	apiStatus := "API key \033[1mOK\033[0m"
