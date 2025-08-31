@@ -94,7 +94,12 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 		}
 		
 		if shouldShow {
-			displayFiles = append(displayFiles, statusIcon+filePath)
+			// Apply path highlighting if there are matches
+			highlightedPath := filePath
+			if len(matches) > 0 {
+				highlightedPath = highlightMatchingPath(filePath, matches)
+			}
+			displayFiles = append(displayFiles, statusIcon+highlightedPath)
 		}
 	}
 	
@@ -306,6 +311,70 @@ func parseOSSLines(ossLines interface{}) []int {
 	}
 
 	return nil
+}
+
+// highlightMatchingPath highlights the parts of filePath that match with the matched file path
+func highlightMatchingPath(filePath string, matches []FileMatch) string {
+	if len(matches) == 0 {
+		return filePath
+	}
+
+	// Find the first valid match (file or snippet)
+	var matchedPath string
+	for _, match := range matches {
+		if match.ID == "file" || match.ID == "snippet" {
+			matchedPath = match.File
+			break
+		}
+	}
+
+	if matchedPath == "" {
+		return filePath
+	}
+
+	// Find the longest common suffix between filePath and matchedPath
+	commonSuffix := findCommonSuffix(filePath, matchedPath)
+	if commonSuffix == "" {
+		return filePath
+	}
+
+	// Find where the common suffix starts in filePath
+	suffixStart := len(filePath) - len(commonSuffix)
+	if suffixStart <= 0 {
+		// The entire path matches, highlight everything
+		return "\033[43m\033[30m" + filePath + "\033[0m"
+	}
+
+	// Split the path into non-matching and matching parts
+	prefix := filePath[:suffixStart]
+	suffix := filePath[suffixStart:]
+
+	// Return with highlighting on the matching suffix
+	return prefix + "\033[43m\033[30m" + suffix + "\033[0m"
+}
+
+// findCommonSuffix finds the longest common suffix between two paths
+func findCommonSuffix(path1, path2 string) string {
+	// Split paths into components
+	parts1 := strings.Split(path1, "/")
+	parts2 := strings.Split(path2, "/")
+
+	// Find common suffix components
+	i := len(parts1) - 1
+	j := len(parts2) - 1
+	var commonParts []string
+
+	for i >= 0 && j >= 0 && parts1[i] == parts2[j] {
+		commonParts = append([]string{parts1[i]}, commonParts...)
+		i--
+		j--
+	}
+
+	if len(commonParts) == 0 {
+		return ""
+	}
+
+	return strings.Join(commonParts, "/")
 }
 
 func contains(slice []int, item int) bool {

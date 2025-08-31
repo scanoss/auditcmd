@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/awesome-gocui/gocui"
@@ -58,7 +59,22 @@ func displayFileStatus(v *gocui.View, match *FileMatch) {
 		}
 	}
 	
-	fmt.Fprintf(v, "\033[1mAudit:\033[0m \033[37m%s%s\033[0m\n", auditStatus, assessment)
+	fmt.Fprintf(v, "\033[1mAudit:\033[0m \033[37m%s%s\033[0m", auditStatus, assessment)
+	
+	// Add Lines field for snippet matches
+	if match.ID == "snippet" {
+		linesInfo := formatOSSLines(match.OSSLines)
+		if linesInfo != "" {
+			fmt.Fprintf(v, " | \033[1mLines:\033[0m \033[37m%s\033[0m", linesInfo)
+		}
+	}
+	
+	// Add Path field showing the full matched file path
+	if match.File != "" {
+		fmt.Fprintf(v, " | \033[1mPath:\033[0m \033[37m%s\033[0m", match.File)
+	}
+	
+	fmt.Fprintf(v, "\n")
 }
 
 func displayDirectoryStatus(v *gocui.View, app *AppState) {
@@ -119,4 +135,44 @@ func displayDirectoryStatus(v *gocui.View, app *AppState) {
 		viewLabel = "All"
 	}
 	fmt.Fprintf(v, "\n\033[1mPending:\033[0m \033[37m%d\033[0m | \033[1mIdentified:\033[0m \033[37m%d\033[0m | \033[1mIgnored:\033[0m \033[37m%d\033[0m | \033[1mView:\033[0m \033[37m%s\033[0m | %s", pendingFiles, identifiedFiles, ignoredFiles, viewLabel, apiStatus)
+}
+
+// formatOSSLines formats the oss_lines field for display in the status pane
+func formatOSSLines(ossLines interface{}) string {
+	if ossLines == nil {
+		return ""
+	}
+
+	switch v := ossLines.(type) {
+	case string:
+		if v == "all" {
+			return "all"
+		}
+		
+		// Handle ranges like "10-20"
+		if strings.Contains(v, "-") {
+			parts := strings.Split(v, "-")
+			if len(parts) == 2 {
+				start, err1 := strconv.Atoi(parts[0])
+				end, err2 := strconv.Atoi(parts[1])
+				if err1 == nil && err2 == nil {
+					return fmt.Sprintf("%d-%d", start, end)
+				}
+			}
+		}
+		
+		// Handle single line numbers
+		if num, err := strconv.Atoi(v); err == nil {
+			return strconv.Itoa(num)
+		}
+		
+		// Return as-is for other string formats
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case float64:
+		return strconv.Itoa(int(v))
+	}
+
+	return ""
 }
