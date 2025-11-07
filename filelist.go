@@ -231,17 +231,23 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 			// Display all content at once and let gocui handle scrolling
 			for i, line := range lines {
 				lineNum := i + 1
-				
+
 				// Highlight logic based on match type
 				shouldHighlight := false
 				if match.ID == "file" {
 					// For "file" type, highlight the entire file
 					shouldHighlight = true
 				} else if match.ID == "snippet" && highlightLines != nil {
-					// For "snippet" type, only highlight specific lines
-					shouldHighlight = contains(highlightLines, lineNum)
+					// For "snippet" type, check if we should highlight
+					if len(highlightLines) > 0 && highlightLines[0] == -1 {
+						// Special marker -1 means highlight all lines
+						shouldHighlight = true
+					} else {
+						// Only highlight specific lines
+						shouldHighlight = contains(highlightLines, lineNum)
+					}
 				}
-				
+
 				if shouldHighlight {
 					fmt.Fprintf(v, "\033[43m\033[30m%4d: %s\033[0m\n", lineNum, line)
 				} else {
@@ -292,27 +298,43 @@ func parseOSSLines(ossLines interface{}) []int {
 	switch v := ossLines.(type) {
 	case string:
 		if v == "all" {
-			return nil
+			return []int{-1} // Special marker for "highlight all lines"
 		}
-		
-		if strings.Contains(v, "-") {
-			parts := strings.Split(v, "-")
-			if len(parts) == 2 {
-				start, err1 := strconv.Atoi(parts[0])
-				end, err2 := strconv.Atoi(parts[1])
-				if err1 == nil && err2 == nil {
-					lines := make([]int, 0)
-					for i := start; i <= end; i++ {
-						lines = append(lines, i)
+
+		// Handle comma-separated ranges: "7-7,48-48,142-159" or single values
+		lines := make([]int, 0)
+		segments := strings.Split(v, ",")
+
+		for _, segment := range segments {
+			segment = strings.TrimSpace(segment)
+
+			if strings.Contains(segment, "-") {
+				// Parse range like "10-20" or "7-7"
+				parts := strings.Split(segment, "-")
+				if len(parts) == 2 {
+					start, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+					end, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+					if err1 == nil && err2 == nil {
+						for i := start; i <= end; i++ {
+							lines = append(lines, i)
+						}
 					}
-					return lines
+				}
+			} else {
+				// Parse single number
+				if num, err := strconv.Atoi(segment); err == nil {
+					lines = append(lines, num)
 				}
 			}
 		}
-		
-		if num, err := strconv.Atoi(v); err == nil {
-			return []int{num}
+
+		if len(lines) > 0 {
+			return lines
 		}
+	case int:
+		return []int{v}
+	case float64:
+		return []int{int(v)}
 	}
 
 	return nil
