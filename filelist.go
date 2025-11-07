@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/awesome-gocui/gocui"
 )
@@ -216,6 +217,12 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 		} else {
 			content, err := fetchFileContent(match.FileURL, app.APIKey)
 			if err != nil {
+				// Check if it's a timeout error
+				if strings.Contains(err.Error(), "TIMEOUT") {
+					fmt.Fprintf(v, "TIMEOUT WHEN RETRIEVING FILE")
+					return nil
+				}
+
 				fmt.Fprintf(v, "Error fetching file content: %v\n\n", err)
 				fmt.Fprintf(v, "This may indicate:\n")
 				fmt.Fprintf(v, "• Invalid API key\n")
@@ -260,28 +267,36 @@ func displayFileContent(g *gocui.Gui, app *AppState, filePath string) error {
 }
 
 func fetchFileContent(url string, apiKey string) (string, error) {
-	client := &http.Client{}
+	// Create HTTP client with 15 second timeout
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
-	
+
 	// Add required headers as per curl example
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
+		// Check if it's a timeout error
+		if strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "timeout") {
+			return "", fmt.Errorf("TIMEOUT")
+		}
 		return "", fmt.Errorf("HTTP request failed: %v", err)
 	}
 	defer resp.Body.Close()
-	
+
 	// Read response body
 	content, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %v", err)
 	}
-	
+
 	// Check for API errors
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(content))
