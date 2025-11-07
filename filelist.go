@@ -47,18 +47,19 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 	
 	// Filter and format files with status indicators
 	displayFiles := make([]string, 0)
-	
+	filteredFiles := make([]string, 0) // Track filtered file paths for selection
+
 	for _, filePath := range files {
 		matches := app.ScanData.Files[filePath]
-		
+
 		// Apply view filter
 		shouldShow := false
 		statusIcon := "- "
-		
+
 		if app.ViewFilter == "all" {
 			shouldShow = true
 		}
-		
+
 		if len(matches) > 0 {
 			// Find the first valid match (file or snippet)
 			var match *FileMatch
@@ -68,12 +69,12 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 					break
 				}
 			}
-			
+
 			if match != nil {
 				if app.ViewFilter == "matched" || app.ViewFilter == "all" {
 					shouldShow = true
 				}
-				
+
 				// Check if file has been processed
 				isProcessed := len(match.AuditCmd) > 0
 				if isProcessed {
@@ -92,7 +93,7 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 				}
 			}
 		}
-		
+
 		if shouldShow {
 			// Apply path highlighting if there are matches
 			highlightedPath := filePath
@@ -100,13 +101,17 @@ func updateFileList(g *gocui.Gui, app *AppState) error {
 				highlightedPath = highlightMatchingPath(filePath, matches)
 			}
 			displayFiles = append(displayFiles, statusIcon+highlightedPath)
+			filteredFiles = append(filteredFiles, filePath) // Keep track of filtered file paths
 		}
 	}
-	
+
 	// Update our custom scrollable list
 	app.FileList.SetItems(displayFiles)
-	app.CurrentFileList = files // Keep original file paths for selection
-	
+	app.CurrentFileList = filteredFiles // Keep filtered file paths for selection
+
+	// Sync the selected index after updating the list
+	app.SelectedFileIndex = app.FileList.GetSelectedIndex()
+
 	// Render the custom list
 	isActive := (app.ActivePane == "files")
 	app.FileList.Render(v, isActive)
