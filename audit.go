@@ -378,6 +378,170 @@ func closeAuditDialog(g *gocui.Gui, app *AppState) error {
 	return nil
 }
 
+func quickAccept(g *gocui.Gui, app *AppState) error {
+	// Only allow when in files pane and in list mode
+	if app.ActivePane != "files" || app.ViewMode != "list" {
+		return nil
+	}
+
+	// Prevent concurrent processing - ignore if already processing
+	if app.ProcessingQuickAction {
+		return nil
+	}
+
+	// Set flag to indicate we're processing
+	app.ProcessingQuickAction = true
+
+	// Do the work asynchronously to allow UI to update
+	go func() {
+		defer func() {
+			// Clear the flag when done
+			g.Update(func(g *gocui.Gui) error {
+				app.ProcessingQuickAction = false
+				return nil
+			})
+		}()
+
+		// Small delay to ensure UI updates are visible
+		time.Sleep(16 * time.Millisecond) // ~60fps
+
+		g.Update(func(g *gocui.Gui) error {
+			// Get the match from the selected file
+			var matchToUpdate *FileMatch
+			if len(app.CurrentFileList) > 0 && app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+				selectedFile := app.CurrentFileList[app.SelectedFileIndex]
+				matches, exists := app.ScanData.Files[selectedFile]
+				if exists && len(matches) > 0 {
+					// Find the first valid match (file or snippet)
+					for i, m := range matches {
+						if m.ID == "file" || m.ID == "snippet" {
+							matchToUpdate = &matches[i]
+							break
+						}
+					}
+				}
+			}
+
+			if matchToUpdate == nil {
+				return nil
+			}
+
+			// Create decision without comment
+			decision := AuditDecision{
+				Decision:   "identified",
+				Assessment: "",
+				Timestamp:  time.Now(),
+			}
+
+			matchToUpdate.AuditCmd = append(matchToUpdate.AuditCmd, decision)
+
+			if err := saveToFile(app); err != nil {
+				return err
+			}
+
+			// Clear current match
+			app.CurrentMatch = nil
+
+			// Update the entire UI to reflect the new status
+			updateFileList(g, app)
+			updateStatus(g, app)
+			updateHelpBar(g, app)
+
+			// In filtered views (pending/matched), the next file automatically takes the current position
+			// In "all" view, we need to navigate to the next file
+			if app.ViewFilter == "all" && app.SelectedFileIndex < len(app.CurrentFileList)-1 {
+				navigateFileList(g, app, "down")
+			}
+
+			return nil
+		})
+	}()
+
+	return nil
+}
+
+func quickIgnore(g *gocui.Gui, app *AppState) error {
+	// Only allow when in files pane and in list mode
+	if app.ActivePane != "files" || app.ViewMode != "list" {
+		return nil
+	}
+
+	// Prevent concurrent processing - ignore if already processing
+	if app.ProcessingQuickAction {
+		return nil
+	}
+
+	// Set flag to indicate we're processing
+	app.ProcessingQuickAction = true
+
+	// Do the work asynchronously to allow UI to update
+	go func() {
+		defer func() {
+			// Clear the flag when done
+			g.Update(func(g *gocui.Gui) error {
+				app.ProcessingQuickAction = false
+				return nil
+			})
+		}()
+
+		// Small delay to ensure UI updates are visible
+		time.Sleep(16 * time.Millisecond) // ~60fps
+
+		g.Update(func(g *gocui.Gui) error {
+			// Get the match from the selected file
+			var matchToUpdate *FileMatch
+			if len(app.CurrentFileList) > 0 && app.SelectedFileIndex >= 0 && app.SelectedFileIndex < len(app.CurrentFileList) {
+				selectedFile := app.CurrentFileList[app.SelectedFileIndex]
+				matches, exists := app.ScanData.Files[selectedFile]
+				if exists && len(matches) > 0 {
+					// Find the first valid match (file or snippet)
+					for i, m := range matches {
+						if m.ID == "file" || m.ID == "snippet" {
+							matchToUpdate = &matches[i]
+							break
+						}
+					}
+				}
+			}
+
+			if matchToUpdate == nil {
+				return nil
+			}
+
+			// Create decision without comment
+			decision := AuditDecision{
+				Decision:   "ignored",
+				Assessment: "",
+				Timestamp:  time.Now(),
+			}
+
+			matchToUpdate.AuditCmd = append(matchToUpdate.AuditCmd, decision)
+
+			if err := saveToFile(app); err != nil {
+				return err
+			}
+
+			// Clear current match
+			app.CurrentMatch = nil
+
+			// Update the entire UI to reflect the new status
+			updateFileList(g, app)
+			updateStatus(g, app)
+			updateHelpBar(g, app)
+
+			// In filtered views (pending/matched), the next file automatically takes the current position
+			// In "all" view, we need to navigate to the next file
+			if app.ViewFilter == "all" && app.SelectedFileIndex < len(app.CurrentFileList)-1 {
+				navigateFileList(g, app, "down")
+			}
+
+			return nil
+		})
+	}()
+
+	return nil
+}
+
 func saveToFile(app *AppState) error {
 	data, err := json.MarshalIndent(app.ScanData.Files, "", "  ")
 	if err != nil {

@@ -114,6 +114,7 @@ type AppState struct {
 	InitialFileListDone bool   // Track if initial file list has been populated
 	FileList          *ScrollableList // Custom scrollable file list
 	TreeList          *ScrollableList // Custom scrollable tree list
+	ProcessingQuickAction bool // Flag to prevent concurrent quick actions
 }
 
 type TreeNode struct {

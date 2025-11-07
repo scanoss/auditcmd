@@ -413,11 +413,11 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 		return err
 	}
 	if err := g.SetKeybinding("", 'A', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		// Only allow accept when NOT in directory pane
+		// Only allow quick accept when NOT in directory pane
 		if app.ActivePane == "tree" {
 			return nil
 		}
-		return showAcceptDialog(g, app)
+		return quickAccept(g, app)
 	}); err != nil {
 		return err
 	}
@@ -431,11 +431,11 @@ func keybindings(g *gocui.Gui, app *AppState) error {
 		return err
 	}
 	if err := g.SetKeybinding("", 'I', gocui.ModNone, func(g *gocui.Gui, v *gocui.View) error {
-		// Only allow ignore when NOT in directory pane
+		// Only allow quick ignore when NOT in directory pane
 		if app.ActivePane == "tree" {
 			return nil
 		}
-		return showIgnoreDialog(g, app)
+		return quickIgnore(g, app)
 	}); err != nil {
 		return err
 	}
@@ -864,7 +864,7 @@ func updateHelpBar(g *gocui.Gui, app *AppState) error {
 	} else {
 		toggleViewText = "[P]URLs"
 	}
-	helpText := fmt.Sprintf("Tab: Switch panes | [T]oggle view | [A]ccept/[I]gnore match | [E]xport CSV | %s | [Q]uit", toggleViewText)
+	helpText := fmt.Sprintf("Tab: Switch panes | [T]oggle view | [a]ccept [A]quick | [i]gnore [I]quick | [E]xport CSV | %s | [Q]uit", toggleViewText)
 	
 	// Calculate padding to right-justify status
 	maxX, _ := v.Size()
