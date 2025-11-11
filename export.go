@@ -143,7 +143,7 @@ func performCSVExport(g *gocui.Gui, app *AppState, filename string) error {
 	maxRanges := getMaxLineRanges(app.ScanData)
 	
 	// Write CSV header with dynamic deeplink columns
-	header := []string{"File Path", "Match Type", "PURL", "License", "Status", "Comment", "Line Ranges"}
+	header := []string{"File Path", "Match Type", "PURL", "License", "Status", "Comment", "Matched Lines", "OSS Lines", "Matched URL", "Matched File", "Matched Version"}
 	// Add deeplink columns based on max ranges found
 	if maxRanges > 1 {
 		for i := 1; i <= maxRanges; i++ {
@@ -178,8 +178,8 @@ func performCSVExport(g *gocui.Gui, app *AppState, filename string) error {
 		matches, exists := app.ScanData.Files[filePath]
 		
 		if !exists || len(matches) == 0 {
-			// File with no matches - fill deeplink columns with empty strings
-			record := []string{filePath, "no-match", "", "", "Pending", "", ""}
+			// File with no matches - fill matched lines, OSS lines, matched URL, file, version, and deeplink columns with empty strings
+			record := []string{filePath, "no-match", "", "", "Pending", "", "", "", "", "", ""}
 			for i := 0; i < maxRanges; i++ {
 				record = append(record, "")
 			}
@@ -199,8 +199,8 @@ func performCSVExport(g *gocui.Gui, app *AppState, filename string) error {
 		}
 		
 		if match == nil {
-			// No valid match found - fill deeplink columns with empty strings  
-			record := []string{filePath, "no-match", "", "", "Pending", "", ""}
+			// No valid match found - fill matched lines, OSS lines, matched URL, file, version, and deeplink columns with empty strings
+			record := []string{filePath, "no-match", "", "", "Pending", "", "", "", "", "", ""}
 			for i := 0; i < maxRanges; i++ {
 				record = append(record, "")
 			}
@@ -240,12 +240,13 @@ func performCSVExport(g *gocui.Gui, app *AppState, filename string) error {
 			comment = latest.Assessment
 		}
 		
-		// Extract line ranges and generate multiple deeplinks
-		lineRanges := extractLineRanges(match)
-		deeplinks := generateMultipleDeeplinks(g, match, lineRanges, maxRanges)
-		
+		// Extract matched lines (in analyzed file) and OSS line ranges (in matched OSS file)
+		matchedLines := extractMatchedLines(match)
+		ossLineRanges := extractLineRanges(match)
+		deeplinks := generateMultipleDeeplinks(g, match, ossLineRanges, maxRanges)
+
 		// Build record with dynamic deeplink columns
-		record := []string{filePath, match.ID, purlStr, licenseStr, status, comment, lineRanges}
+		record := []string{filePath, match.ID, purlStr, licenseStr, status, comment, matchedLines, ossLineRanges, match.URL, match.File, match.Latest}
 		record = append(record, deeplinks...)
 		if err := writer.Write(record); err != nil {
 			return showExportError(g, app, fmt.Sprintf("Failed to write record: %v", err))
@@ -271,9 +272,27 @@ func extractLineRanges(match *FileMatch) string {
 	if match.OSSLines == nil {
 		return ""
 	}
-	
+
 	// Convert interface{} to string
 	switch v := match.OSSLines.(type) {
+	case string:
+		if v == "all" {
+			return "all"
+		}
+		return v
+	default:
+		return ""
+	}
+}
+
+// extractMatchedLines extracts line ranges from lines field (matched lines in analyzed file)
+func extractMatchedLines(match *FileMatch) string {
+	if match.Lines == nil {
+		return ""
+	}
+
+	// Convert interface{} to string
+	switch v := match.Lines.(type) {
 	case string:
 		if v == "all" {
 			return "all"

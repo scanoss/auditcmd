@@ -23,6 +23,7 @@ type FileMatch struct {
 	ID            string           `json:"id"`
 	Latest        string           `json:"latest"`
 	Licenses      []License        `json:"licenses"`
+	Lines         interface{}      `json:"lines"`
 	OSSLines      interface{}      `json:"oss_lines"`
 	Purl          []string         `json:"purl"`
 	Quality       []Quality        `json:"quality"`
